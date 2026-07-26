@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Editores
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Variables y secretos
+.env
+.env.*
+*.key
+*.pem
+
+# Dependencias
+node_modules/
+.venv/
+venv/
+
+# Compilación
+dist/
+build/
+target/
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+*.log
