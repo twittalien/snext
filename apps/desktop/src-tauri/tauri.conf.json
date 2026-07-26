@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "desktop",
+  "productName": "Snext",
   "version": "0.1.0",
   "identifier": "com.snext.desktop",
   "build": {
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "desktop",
-        "width": 800,
-        "height": 600
+        "title": "Snext",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 640
       }
     ],
     "security": {
