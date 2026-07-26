@@ -23,3 +23,11 @@ cargo --version
 node --version
 npm --version
 pnpm --version
+
+echo
+echo "=== Application toolchain ==="
+rustc --version
+cargo --version
+node --version
+npm --version
+pnpm --version
