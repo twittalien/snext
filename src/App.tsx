@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { getTranslation, type Language } from "./i18n";
 
 type AvatarSource = "initials" | "local" | "steam" | "retro";
+type Theme = "auto" | "dark" | "light";
 
 type Settings = {
   name: string;
-  language: "es" | "en" | "pt";
-  theme: "auto" | "dark" | "light";
+  language: Language;
+  theme: Theme;
   retroAchievementsUser: string;
   weatherLocation: string;
   avatarSource: AvatarSource;
@@ -35,6 +37,23 @@ const friends = [
   { name: "Luz", activity: "Escuchando Spotify", color: "#ff6bb5" },
 ];
 
+function loadSettings(): Settings {
+  try {
+    const stored = localStorage.getItem("snext-settings");
+
+    if (!stored) {
+      return defaultSettings;
+    }
+
+    return {
+      ...defaultSettings,
+      ...(JSON.parse(stored) as Partial<Settings>),
+    };
+  } catch {
+    return defaultSettings;
+  }
+}
+
 function Logo() {
   return (
     <svg className="logo-mark" viewBox="0 0 72 72" aria-hidden="true">
@@ -44,6 +63,7 @@ function Logo() {
           <stop offset="1" stopColor="#35def2" />
         </linearGradient>
       </defs>
+
       <path
         d="M52 18c-8-8-25-7-31 3-7 12 6 17 16 18 8 1 14 3 11 9-4 8-21 6-28-2"
         fill="none"
@@ -51,6 +71,7 @@ function Logo() {
         strokeWidth="9"
         strokeLinecap="round"
       />
+
       <path
         d="M20 54c8 8 25 7 31-3 7-12-6-17-16-18-8-1-14-3-11-9 4-8 21-6 28 2"
         fill="none"
@@ -64,26 +85,51 @@ function Logo() {
 }
 
 function Icon({ children }: { children: string }) {
-  return <span className="icon" aria-hidden="true">{children}</span>;
+  return (
+    <span className="icon" aria-hidden="true">
+      {children}
+    </span>
+  );
 }
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [now, setNow] = useState(new Date());
-  const [settings, setSettings] = useState<Settings>(() => {
-    const stored = localStorage.getItem("snext-settings");
-    return stored ? { ...defaultSettings, ...JSON.parse(stored) } : defaultSettings;
-  });
+  const [settings, setSettings] = useState<Settings>(loadSettings);
+
+  const t = getTranslation(settings.language);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
+
+    return () => {
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
     localStorage.setItem("snext-settings", JSON.stringify(settings));
     document.documentElement.dataset.theme = settings.theme;
+    document.documentElement.lang = settings.language;
   }, [settings]);
+
+  useEffect(() => {
+    if (!settingsOpen) {
+      return;
+    }
+
+    const closeWithEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSettingsOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", closeWithEscape);
+
+    return () => {
+      document.removeEventListener("keydown", closeWithEscape);
+    };
+  }, [settingsOpen]);
 
   const locale =
     settings.language === "en"
@@ -92,27 +138,32 @@ function App() {
         ? "pt-BR"
         : "es-MX";
 
-  const initials =
-    settings.name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((word) => word[0]?.toUpperCase())
-      .join("") || "SN";
+  const initials = useMemo(() => {
+    return (
+      settings.name
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((word) => word[0]?.toUpperCase())
+        .join("") || "SN"
+    );
+  }, [settings.name]);
 
-  const handleAvatarFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
-    if (!file) return;
+    if (!file) {
+      return;
+    }
 
     if (!file.type.startsWith("image/")) {
-      window.alert("Selecciona un archivo de imagen.");
+      window.alert(t.imageOnly);
       event.target.value = "";
       return;
     }
 
     if (file.size > 2 * 1024 * 1024) {
-      window.alert("La imagen debe pesar menos de 2 MB.");
+      window.alert(t.imageTooLarge);
       event.target.value = "";
       return;
     }
@@ -120,11 +171,11 @@ function App() {
     const reader = new FileReader();
 
     reader.onload = () => {
-      setSettings({
-        ...settings,
+      setSettings((currentSettings) => ({
+        ...currentSettings,
         avatarSource: "local",
         avatarData: String(reader.result ?? ""),
-      });
+      }));
     };
 
     reader.readAsDataURL(file);
@@ -137,6 +188,65 @@ function App() {
       initials
     );
 
+  const dateText = now.toLocaleDateString(locale, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
+  const timeText = now.toLocaleTimeString(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const translatedAchievements = [
+    {
+      name:
+        settings.language === "en"
+          ? "The journey begins"
+          : settings.language === "pt"
+            ? "A jornada começa"
+            : achievements[0].name,
+      progress: achievements[0].progress,
+    },
+    {
+      name:
+        settings.language === "en"
+          ? "Collector"
+          : settings.language === "pt"
+            ? "Colecionador"
+            : achievements[1].name,
+      progress: achievements[1].progress,
+    },
+    {
+      name:
+        settings.language === "en"
+          ? "Combat master"
+          : settings.language === "pt"
+            ? "Mestre do combate"
+            : achievements[2].name,
+      progress: achievements[2].progress,
+    },
+  ];
+
+  const translatedFriends = friends.map((friend) => {
+    if (friend.name === "Kiro") {
+      return {
+        ...friend,
+        activity: t.online,
+      };
+    }
+
+    if (friend.name === "Luz") {
+      return {
+        ...friend,
+        activity: t.listeningSpotify,
+      };
+    }
+
+    return friend;
+  });
+
   return (
     <div className="app">
       <div className="ambient ambient-purple" />
@@ -145,24 +255,24 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <Logo />
+
           <div>
             <strong>snext</strong>
-            <span>gaming companion</span>
+            <span>{t.gamingCompanion}</span>
           </div>
         </div>
 
         <div className="topbar-actions">
           <div className="user">
-            <span className="user-avatar">
-             {avatarContent}
-              </span>
+            <span className="user-avatar">{avatarContent}</span>
             <span>{settings.name}</span>
           </div>
 
           <button
             className="settings-button"
             type="button"
-            aria-label="Abrir configuración"
+            aria-label={t.settings}
+            aria-expanded={settingsOpen}
             onClick={() => setSettingsOpen(true)}
           >
             ⚙
@@ -173,29 +283,18 @@ function App() {
       <main>
         <section className="welcome">
           <div>
-            <p className="eyebrow">PANTALLA DE JUEGO</p>
+            <p className="eyebrow">{t.gameScreen.toUpperCase()}</p>
+
             <h1>
-              Tu partida, <span>en contexto.</span>
+              {t.headlineStart} <span>{t.headlineAccent}</span>
             </h1>
-            <p className="welcome-copy">
-              Información, progreso y servicios mientras juegas.
-            </p>
+
+            <p className="welcome-copy">{t.subtitle}</p>
           </div>
 
           <div className="date-widget">
-            <strong>
-              {now.toLocaleTimeString(locale, {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </strong>
-            <span>
-              {now.toLocaleDateString(locale, {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-              })}
-            </span>
+            <strong>{timeText}</strong>
+            <span>{dateText}</span>
           </div>
         </section>
 
@@ -203,11 +302,12 @@ function App() {
           <article className="card game-card">
             <div className="card-heading">
               <div>
-                <p className="eyebrow">JUEGO ACTIVO</p>
+                <p className="eyebrow">{t.activeGame.toUpperCase()}</p>
                 <h2>The Legend of Zelda</h2>
               </div>
+
               <span className="status">
-                <i /> EN JUEGO
+                <i /> {t.inGame.toUpperCase()}
               </span>
             </div>
 
@@ -215,16 +315,27 @@ function App() {
               <div className="game-cover">
                 <Logo />
               </div>
+
               <div className="game-details">
-                <span className="platform">Nintendo Switch · Emulación</span>
-                <p>
-                  Explora un vasto reino, descubre secretos y recupera el poder
-                  perdido mientras completas tu aventura.
-                </p>
+                <span className="platform">{t.platform}</span>
+
+                <p>{t.gameDescription}</p>
+
                 <div className="game-stats">
-                  <div><strong>42 h</strong><span>Tiempo jugado</span></div>
-                  <div><strong>9.4</strong><span>Calificación</span></div>
-                  <div><strong>68%</strong><span>Progreso</span></div>
+                  <div>
+                    <strong>42 h</strong>
+                    <span>{t.playedTime}</span>
+                  </div>
+
+                  <div>
+                    <strong>9.4</strong>
+                    <span>{t.rating}</span>
+                  </div>
+
+                  <div>
+                    <strong>68%</strong>
+                    <span>{t.progress}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -233,32 +344,52 @@ function App() {
           <article className="card music-card">
             <div className="card-title">
               <Icon>♫</Icon>
-              <div><span>Spotify</span><strong>Reproduciendo ahora</strong></div>
+
+              <div>
+                <span>Spotify</span>
+                <strong>{t.nowPlaying}</strong>
+              </div>
             </div>
+
             <div className="song">
               <div className="album-art">SN</div>
+
               <div>
                 <h3>Midnight City</h3>
                 <p>M83 · Hurry Up, We’re Dreaming</p>
               </div>
             </div>
-            <div className="song-progress"><span /></div>
-            <div className="song-time"><span>2:14</span><span>4:03</span></div>
+
+            <div className="song-progress">
+              <span />
+            </div>
+
+            <div className="song-time">
+              <span>2:14</span>
+              <span>4:03</span>
+            </div>
           </article>
 
           <article className="card achievements-card">
             <div className="card-title">
               <Icon>◆</Icon>
-              <div><span>Progreso</span><strong>Logros</strong></div>
+
+              <div>
+                <span>{t.progress}</span>
+                <strong>{t.achievements}</strong>
+              </div>
+
               <b className="counter">18 / 42</b>
             </div>
+
             <div className="achievement-list">
-              {achievements.map((achievement) => (
+              {translatedAchievements.map((achievement) => (
                 <div className="achievement" key={achievement.name}>
                   <div>
                     <span>{achievement.name}</span>
                     <strong>{achievement.progress}%</strong>
                   </div>
+
                   <div className="progress">
                     <span style={{ width: `${achievement.progress}%` }} />
                   </div>
@@ -270,22 +401,43 @@ function App() {
           <article className="card weather-card">
             <div className="card-title">
               <Icon>☁</Icon>
-              <div><span>{settings.weatherLocation}</span><strong>Clima</strong></div>
+
+              <div>
+                <span>
+                  {settings.weatherLocation ===
+                  defaultSettings.weatherLocation
+                    ? t.automaticLocation
+                    : settings.weatherLocation}
+                </span>
+
+                <strong>{t.weather}</strong>
+              </div>
             </div>
+
             <div className="weather">
               <strong>18°</strong>
-              <div><b>Parcialmente nublado</b><span>Sensación de 17°</span></div>
+
+              <div>
+                <b>{t.partlyCloudy}</b>
+                <span>{t.feelsLike}</span>
+              </div>
             </div>
           </article>
 
           <article className="card friends-card">
             <div className="card-title">
               <Icon>◉</Icon>
-              <div><span>Discord</span><strong>Amigos conectados</strong></div>
+
+              <div>
+                <span>{t.discord}</span>
+                <strong>{t.onlineFriends}</strong>
+              </div>
+
               <b className="counter">3</b>
             </div>
+
             <div className="friend-list">
-              {friends.map((friend) => (
+              {translatedFriends.map((friend) => (
                 <div className="friend" key={friend.name}>
                   <span
                     className="friend-avatar"
@@ -293,7 +445,12 @@ function App() {
                   >
                     {friend.name[0]}
                   </span>
-                  <div><strong>{friend.name}</strong><span>{friend.activity}</span></div>
+
+                  <div>
+                    <strong>{friend.name}</strong>
+                    <span>{friend.activity}</span>
+                  </div>
+
                   <i />
                 </div>
               ))}
@@ -303,25 +460,59 @@ function App() {
           <article className="card system-card">
             <div className="card-title">
               <Icon>▦</Icon>
-              <div><span>Bazzite</span><strong>Tu equipo</strong></div>
+
+              <div>
+                <span>{t.bazzite}</span>
+                <strong>{t.yourSystem}</strong>
+              </div>
             </div>
+
             <div className="system-grid">
-              <div><span>CPU</span><strong>22%</strong><i><b style={{ width: "22%" }} /></i></div>
-              <div><span>GPU</span><strong>64%</strong><i><b style={{ width: "64%" }} /></i></div>
-              <div><span>RAM</span><strong>6.7 GB</strong><i><b style={{ width: "21%" }} /></i></div>
-              <div><span>Red</span><strong>486 Mbps</strong><i><b style={{ width: "76%" }} /></i></div>
+              <div>
+                <span>CPU</span>
+                <strong>22%</strong>
+
+                <i>
+                  <b style={{ width: "22%" }} />
+                </i>
+              </div>
+
+              <div>
+                <span>GPU</span>
+                <strong>64%</strong>
+
+                <i>
+                  <b style={{ width: "64%" }} />
+                </i>
+              </div>
+
+              <div>
+                <span>RAM</span>
+                <strong>6.7 GB</strong>
+
+                <i>
+                  <b style={{ width: "21%" }} />
+                </i>
+              </div>
+
+              <div>
+                <span>{t.network}</span>
+                <strong>486 Mbps</strong>
+
+                <i>
+                  <b style={{ width: "76%" }} />
+                </i>
+              </div>
             </div>
           </article>
 
           <article className="card assistant-card">
             <div className="assistant-icon">✦</div>
+
             <div>
-              <p className="eyebrow">SNEXT AI</p>
-              <h2>Consejo para tu aventura</h2>
-              <p>
-                Antes de entrar al siguiente templo, combina alimentos con
-                bonificaciones de resistencia. Podrás escalar durante más tiempo.
-              </p>
+              <p className="eyebrow">{t.aiTipLabel.toUpperCase()}</p>
+              <h2>{t.aiTipTitle}</h2>
+              <p>{t.aiTip}</p>
             </div>
           </article>
         </section>
@@ -332,19 +523,25 @@ function App() {
           <button
             className="backdrop"
             type="button"
-            aria-label="Cerrar configuración"
+            aria-label={t.settings}
             onClick={() => setSettingsOpen(false)}
           />
 
-          <aside className="settings-panel">
+          <aside
+            className="settings-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+          >
             <header>
               <div>
                 <p className="eyebrow">SNEXT</p>
-                <h2>Configuración</h2>
+                <h2 id="settings-title">{t.settings}</h2>
               </div>
+
               <button
                 type="button"
-                aria-label="Cerrar"
+                aria-label={t.settings}
                 onClick={() => setSettingsOpen(false)}
               >
                 ×
@@ -353,77 +550,81 @@ function App() {
 
             <div className="settings-content">
               <section>
-  <h3>Perfil</h3>
+                <h3>{t.profile}</h3>
 
-  <div className="profile-editor">
-    <span className="profile-avatar">
-      {avatarContent}
-    </span>
-    <div>
-      <strong>{settings.name || "Snext Player"}</strong>
-      <span>Personaliza cómo apareces en Snext</span>
-    </div>
-  </div>
+                <div className="profile-editor">
+                  <span className="profile-avatar">{avatarContent}</span>
 
-  <label>
-    Nombre visible
-    <input
-      value={settings.name}
-      onChange={(event) =>
-        setSettings({ ...settings, name: event.target.value })
-      }
-    />
-  </label>
+                  <div>
+                    <strong>{settings.name || "Snext Player"}</strong>
+                    <span>{t.profileDescription}</span>
+                  </div>
+                </div>
 
-  <label>
-    Origen del avatar
-    <select
-      value={settings.avatarSource}
-      onChange={(event) =>
-        setSettings({
-          ...settings,
-          avatarSource: event.target.value as AvatarSource,
-        })
-      }
-    >
-      <option value="initials">Iniciales</option>
-      <option value="local">Imagen local</option>
-      <option value="steam">Steam, próximamente</option>
-      <option value="retro">RetroAchievements, próximamente</option>
-    </select>
-  </label>
+                <label>
+                  {t.visibleName}
 
-  {settings.avatarSource === "local" && (
-    <label>
-      Seleccionar imagen
-      <input
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        onChange={handleAvatarFile}
-      />
-    </label>
-  )}
+                  <input
+                    value={settings.name}
+                    onChange={(event) =>
+                      setSettings((currentSettings) => ({
+                        ...currentSettings,
+                        name: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
 
-  {(settings.avatarSource === "steam" ||
-    settings.avatarSource === "retro") && (
-    <p className="hint">
-      Este origen estará disponible cuando conectemos la cuenta
-      correspondiente. Mientras tanto se mostrarán tus iniciales.
-    </p>
-  )}
-</section>
+                <label>
+                  {t.avatarSource}
+
+                  <select
+                    value={settings.avatarSource}
+                    onChange={(event) =>
+                      setSettings((currentSettings) => ({
+                        ...currentSettings,
+                        avatarSource: event.target.value as AvatarSource,
+                      }))
+                    }
+                  >
+                    <option value="initials">{t.initials}</option>
+                    <option value="local">{t.localImage}</option>
+                    <option value="steam">{t.steamSoon}</option>
+                    <option value="retro">{t.retroSoon}</option>
+                  </select>
+                </label>
+
+                {settings.avatarSource === "local" && (
+                  <label>
+                    {t.selectImage}
+
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      onChange={handleAvatarFile}
+                    />
+                  </label>
+                )}
+
+                {(settings.avatarSource === "steam" ||
+                  settings.avatarSource === "retro") && (
+                  <p className="hint">{t.providerSoon}</p>
+                )}
+              </section>
 
               <section>
-                <h3>Apariencia</h3>
+                <h3>{t.appearance}</h3>
+
                 <label>
-                  Idioma
+                  {t.language}
+
                   <select
                     value={settings.language}
                     onChange={(event) =>
-                      setSettings({
-                        ...settings,
-                        language: event.target.value as Settings["language"],
-                      })
+                      setSettings((currentSettings) => ({
+                        ...currentSettings,
+                        language: event.target.value as Language,
+                      }))
                     }
                   >
                     <option value="es">Español</option>
@@ -433,41 +634,45 @@ function App() {
                 </label>
 
                 <label>
-                  Tema
+                  {t.theme}
+
                   <select
                     value={settings.theme}
                     onChange={(event) =>
-                      setSettings({
-                        ...settings,
-                        theme: event.target.value as Settings["theme"],
-                      })
+                      setSettings((currentSettings) => ({
+                        ...currentSettings,
+                        theme: event.target.value as Theme,
+                      }))
                     }
                   >
-                    <option value="auto">Automático</option>
-                    <option value="dark">Oscuro</option>
-                    <option value="light">Claro</option>
+                    <option value="auto">{t.automatic}</option>
+                    <option value="dark">{t.dark}</option>
+                    <option value="light">{t.light}</option>
                   </select>
                 </label>
               </section>
 
               <section>
-                <h3>Clima</h3>
+                <h3>{t.climate}</h3>
+
                 <label>
-                  Ubicación
+                  {t.location}
+
                   <input
                     value={settings.weatherLocation}
                     onChange={(event) =>
-                      setSettings({
-                        ...settings,
+                      setSettings((currentSettings) => ({
+                        ...currentSettings,
                         weatherLocation: event.target.value,
-                      })
+                      }))
                     }
                   />
                 </label>
               </section>
 
               <section>
-                <h3>Integraciones</h3>
+                <h3>{t.integrations}</h3>
+
                 {[
                   "Spotify Client ID",
                   "RetroAchievements API key",
@@ -477,15 +682,17 @@ function App() {
                 ].map((label) => (
                   <label key={label}>
                     {label}
-                    <input type="password" placeholder="Sin configurar" />
+
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      placeholder={t.notConfigured}
+                    />
                   </label>
                 ))}
               </section>
 
-              <p className="privacy">
-                Esta versión utiliza información demostrativa. No introduzcas
-                todavía credenciales reales.
-              </p>
+              <p className="privacy">{t.demoWarning}</p>
             </div>
           </aside>
         </div>
