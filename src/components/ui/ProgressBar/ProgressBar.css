@@ -1,0 +1,62 @@
+.snext-progress {
+  display: grid;
+  gap: var(--snext-space-2);
+  min-width: 0;
+}
+
+.snext-progress__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--snext-space-3);
+  color: var(--snext-text-muted);
+  font-size: var(--snext-text-xs);
+}
+
+.snext-progress__meta strong {
+  color: var(--snext-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.snext-progress__track {
+  overflow: hidden;
+  width: 100%;
+  border-radius: var(--snext-radius-round);
+  background: rgba(128, 128, 150, 0.18);
+}
+
+.snext-progress--small .snext-progress__track {
+  height: 0.25rem;
+}
+
+.snext-progress--medium .snext-progress__track {
+  height: 0.375rem;
+}
+
+.snext-progress__track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width var(--snext-duration-slow) var(--snext-ease-standard);
+}
+
+.snext-progress--brand .snext-progress__track > span {
+  background: linear-gradient(
+    90deg,
+    var(--snext-violet-500),
+    var(--snext-cyan-500)
+  );
+  box-shadow: 0 0 1rem rgba(53, 223, 240, 0.3);
+}
+
+.snext-progress--success .snext-progress__track > span {
+  background: var(--snext-success);
+}
+
+.snext-progress--warning .snext-progress__track > span {
+  background: var(--snext-warning);
+}
+
+.snext-progress--danger .snext-progress__track > span {
+  background: var(--snext-danger);
+}

@@ -1,0 +1,162 @@
+:root {
+  color-scheme: dark;
+
+  /* Brand */
+  --snext-violet-300: #b99cff;
+  --snext-violet-400: #9d7aff;
+  --snext-violet-500: #865dff;
+  --snext-violet-600: #7045ed;
+
+  --snext-cyan-300: #82eff7;
+  --snext-cyan-400: #55e7f2;
+  --snext-cyan-500: #35dff0;
+  --snext-cyan-600: #13bfd1;
+
+  /* Feedback */
+  --snext-success: #4ff0b4;
+  --snext-warning: #f5b942;
+  --snext-danger: #ed5a67;
+  --snext-info: #55a8ff;
+
+  /* Dark theme */
+  --snext-bg: #080a14;
+  --snext-bg-elevated: #0d101d;
+  --snext-surface: rgba(18, 21, 39, 0.8);
+  --snext-surface-solid: #121527;
+  --snext-surface-elevated: #171a30;
+  --snext-surface-strong: #1d213a;
+
+  --snext-text: #f8f9ff;
+  --snext-text-soft: #d5d8e8;
+  --snext-text-muted: #9298af;
+  --snext-text-subtle: #6f758c;
+
+  --snext-border: rgba(255, 255, 255, 0.09);
+  --snext-border-strong: rgba(255, 255, 255, 0.16);
+  --snext-overlay: rgba(3, 4, 11, 0.7);
+
+  /* Typography */
+  --snext-font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+
+  --snext-text-xs: 0.6875rem;
+  --snext-text-sm: 0.8125rem;
+  --snext-text-md: 0.9375rem;
+  --snext-text-lg: 1.125rem;
+  --snext-text-xl: 1.375rem;
+  --snext-text-2xl: 1.75rem;
+  --snext-text-3xl: clamp(2.25rem, 6vw, 4.75rem);
+
+  --snext-weight-regular: 400;
+  --snext-weight-medium: 550;
+  --snext-weight-semibold: 650;
+  --snext-weight-bold: 750;
+  --snext-weight-black: 850;
+
+  /* Spacing */
+  --snext-space-1: 0.25rem;
+  --snext-space-2: 0.5rem;
+  --snext-space-3: 0.75rem;
+  --snext-space-4: 1rem;
+  --snext-space-5: 1.25rem;
+  --snext-space-6: 1.5rem;
+  --snext-space-8: 2rem;
+  --snext-space-10: 2.5rem;
+  --snext-space-12: 3rem;
+
+  /* Radius */
+  --snext-radius-sm: 0.75rem;
+  --snext-radius-md: 1rem;
+  --snext-radius-lg: 1.375rem;
+  --snext-radius-xl: 1.75rem;
+  --snext-radius-round: 999px;
+
+  /* Shadows */
+  --snext-shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.14);
+  --snext-shadow-md: 0 18px 50px rgba(0, 0, 0, 0.2);
+  --snext-shadow-lg: 0 28px 90px rgba(0, 0, 0, 0.34);
+  --snext-shadow-glow:
+    0 0 32px rgba(134, 93, 255, 0.16),
+    0 0 60px rgba(53, 223, 240, 0.08);
+
+  /* Layout */
+  --snext-content-max: 82.5rem;
+  --snext-content-gutter: clamp(0.75rem, 2.4vw, 2rem);
+  --snext-grid-gap: clamp(0.75rem, 1.5vw, 1rem);
+  --snext-header-height: 5.5rem;
+
+  /* Effects */
+  --snext-blur-sm: 10px;
+  --snext-blur-md: 22px;
+  --snext-blur-lg: 42px;
+
+  /* Motion */
+  --snext-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --snext-duration-fast: 150ms;
+  --snext-duration-normal: 240ms;
+  --snext-duration-slow: 600ms;
+
+  /* Focus */
+  --snext-focus:
+    0 0 0 3px rgba(8, 10, 20, 0.85),
+    0 0 0 6px rgba(53, 223, 240, 0.55);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --snext-bg: #eef1fa;
+  --snext-bg-elevated: #f5f7fc;
+  --snext-surface: rgba(255, 255, 255, 0.78);
+  --snext-surface-solid: #f7f8fc;
+  --snext-surface-elevated: #ffffff;
+  --snext-surface-strong: #eaedf7;
+
+  --snext-text: #161426;
+  --snext-text-soft: #353248;
+  --snext-text-muted: #69667d;
+  --snext-text-subtle: #89869a;
+
+  --snext-border: rgba(47, 37, 88, 0.13);
+  --snext-border-strong: rgba(47, 37, 88, 0.21);
+  --snext-overlay: rgba(8, 10, 20, 0.68);
+
+  --snext-shadow-sm: 0 8px 24px rgba(62, 46, 120, 0.08);
+  --snext-shadow-md: 0 18px 50px rgba(62, 46, 120, 0.13);
+  --snext-shadow-lg: 0 28px 90px rgba(48, 35, 98, 0.2);
+
+  --snext-focus:
+    0 0 0 3px rgba(255, 255, 255, 0.92),
+    0 0 0 6px rgba(53, 223, 240, 0.65);
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="auto"] {
+    color-scheme: light;
+
+    --snext-bg: #eef1fa;
+    --snext-bg-elevated: #f5f7fc;
+    --snext-surface: rgba(255, 255, 255, 0.78);
+    --snext-surface-solid: #f7f8fc;
+    --snext-surface-elevated: #ffffff;
+    --snext-surface-strong: #eaedf7;
+
+    --snext-text: #161426;
+    --snext-text-soft: #353248;
+    --snext-text-muted: #69667d;
+    --snext-text-subtle: #89869a;
+
+    --snext-border: rgba(47, 37, 88, 0.13);
+    --snext-border-strong: rgba(47, 37, 88, 0.21);
+    --snext-overlay: rgba(8, 10, 20, 0.68);
+
+    --snext-shadow-sm: 0 8px 24px rgba(62, 46, 120, 0.08);
+    --snext-shadow-md: 0 18px 50px rgba(62, 46, 120, 0.13);
+    --snext-shadow-lg: 0 28px 90px rgba(48, 35, 98, 0.2);
+
+    --snext-focus:
+      0 0 0 3px rgba(255, 255, 255, 0.92),
+      0 0 0 6px rgba(53, 223, 240, 0.65);
+  }
+}
