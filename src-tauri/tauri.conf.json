@@ -2,21 +2,19 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Snext",
   "version": "0.1.0",
-  "identifier": "com.snext.desktop",
+  "identifier": "app.snext.dashboard",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
         "title": "Snext",
-        "width": 1440,
-        "height": 900,
-        "minWidth": 960,
-        "minHeight": 640
+        "width": 800,
+        "height": 600
       }
     ],
     "security": {

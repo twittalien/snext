@@ -1,17 +1,7 @@
-# Snext
+# Tauri + React + Typescript
 
-Snext es una plataforma modular diseñada primero para mando, construida sobre Bazzite como interfaz central para juegos, servicios, automatización y herramientas del sistema.
+This template should help get you started developing with Tauri, React and Typescript in Vite.
 
-## Estado del proyecto
+## Recommended IDE Setup
 
-Sprint 0 — Preparación del servidor y entorno de desarrollo remoto.
-
-## Entorno actual
-
-- Servidor: Bazzite
-- Cliente de desarrollo: macOS
-- Acceso remoto: OpenSSH
-- Resolución local: `snext.local`
-- Editor: VS Code Remote SSH
-- Entorno aislado: Distrobox `snext-dev`
-- Sistema del contenedor: Fedora
+- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
