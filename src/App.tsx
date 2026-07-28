@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
+type AvatarSource = "initials" | "local" | "steam" | "retro";
+
 type Settings = {
   name: string;
   language: "es" | "en" | "pt";
   theme: "auto" | "dark" | "light";
   retroAchievementsUser: string;
   weatherLocation: string;
+  avatarSource: AvatarSource;
+  avatarData: string;
 };
 
 const defaultSettings: Settings = {
@@ -15,6 +19,8 @@ const defaultSettings: Settings = {
   theme: "auto",
   retroAchievementsUser: "twittalien",
   weatherLocation: "Ubicación automática",
+  avatarSource: "initials",
+  avatarData: "",
 };
 
 const achievements = [
@@ -86,6 +92,51 @@ function App() {
         ? "pt-BR"
         : "es-MX";
 
+  const initials =
+    settings.name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((word) => word[0]?.toUpperCase())
+      .join("") || "SN";
+
+  const handleAvatarFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      window.alert("Selecciona un archivo de imagen.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      window.alert("La imagen debe pesar menos de 2 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setSettings({
+        ...settings,
+        avatarSource: "local",
+        avatarData: String(reader.result ?? ""),
+      });
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const avatarContent =
+    settings.avatarSource === "local" && settings.avatarData ? (
+      <img src={settings.avatarData} alt="" />
+    ) : (
+      initials
+    );
+
   return (
     <div className="app">
       <div className="ambient ambient-purple" />
@@ -103,8 +154,8 @@ function App() {
         <div className="topbar-actions">
           <div className="user">
             <span className="user-avatar">
-              {settings.name.slice(0, 2).toUpperCase()}
-            </span>
+             {avatarContent}
+              </span>
             <span>{settings.name}</span>
           </div>
 
@@ -302,21 +353,65 @@ function App() {
 
             <div className="settings-content">
               <section>
-                <h3>Perfil</h3>
-                <label>
-                  Nombre visible
-                  <input
-                    value={settings.name}
-                    onChange={(event) =>
-                      setSettings({ ...settings, name: event.target.value })
-                    }
-                  />
-                </label>
-                <p className="hint">
-                  En la siguiente fase podrás elegir una foto local, de Steam o
-                  de RetroAchievements.
-                </p>
-              </section>
+  <h3>Perfil</h3>
+
+  <div className="profile-editor">
+    <span className="profile-avatar">
+      {avatarContent}
+    </span>
+    <div>
+      <strong>{settings.name || "Snext Player"}</strong>
+      <span>Personaliza cómo apareces en Snext</span>
+    </div>
+  </div>
+
+  <label>
+    Nombre visible
+    <input
+      value={settings.name}
+      onChange={(event) =>
+        setSettings({ ...settings, name: event.target.value })
+      }
+    />
+  </label>
+
+  <label>
+    Origen del avatar
+    <select
+      value={settings.avatarSource}
+      onChange={(event) =>
+        setSettings({
+          ...settings,
+          avatarSource: event.target.value as AvatarSource,
+        })
+      }
+    >
+      <option value="initials">Iniciales</option>
+      <option value="local">Imagen local</option>
+      <option value="steam">Steam, próximamente</option>
+      <option value="retro">RetroAchievements, próximamente</option>
+    </select>
+  </label>
+
+  {settings.avatarSource === "local" && (
+    <label>
+      Seleccionar imagen
+      <input
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        onChange={handleAvatarFile}
+      />
+    </label>
+  )}
+
+  {(settings.avatarSource === "steam" ||
+    settings.avatarSource === "retro") && (
+    <p className="hint">
+      Este origen estará disponible cuando conectemos la cuenta
+      correspondiente. Mientras tanto se mostrarán tus iniciales.
+    </p>
+  )}
+</section>
 
               <section>
                 <h3>Apariencia</h3>
