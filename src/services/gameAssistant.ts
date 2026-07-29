@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type { GameHeroData } from "../features/game";
 
 export type AssistantOptions = {
@@ -14,18 +15,10 @@ export type AssistantInsight = {
   updatedAt: string;
 };
 
-type GeminiResponse = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string;
-      }>;
-    };
-  }>;
-};
-
-type OllamaResponse = {
-  response?: string;
+type NativeAiTipResponse = {
+  title: string;
+  body: string;
+  source: "gemini" | "ollama" | "local";
 };
 
 const cacheTtlMs = 1000 * 60 * 30;
@@ -71,22 +64,6 @@ function writeCachedInsight(key: string, insight: AssistantInsight) {
   );
 }
 
-function buildPrompt(game: GameHeroData, language: AssistantOptions["language"]) {
-  const languageName =
-    language === "en" ? "English" : language === "pt" ? "Portuguese" : "Spanish";
-
-  return [
-    `Answer in ${languageName}.`,
-    "You are Snext, a concise gaming companion shown on a secondary monitor.",
-    "Give one practical, non-spoiler gameplay tip for the detected game.",
-    "Avoid pretending you know the player's exact mission unless it is provided.",
-    "Keep the answer under 55 words.",
-    `Game title: ${game.title}`,
-    `Platform/source: ${game.platform} / ${game.source}`,
-    `Description: ${game.description}`,
-  ].join("\n");
-}
-
 function localInsight(game: GameHeroData, language: AssistantOptions["language"]): AssistantInsight {
   const title =
     language === "en"
@@ -109,53 +86,38 @@ function localInsight(game: GameHeroData, language: AssistantOptions["language"]
   };
 }
 
-async function loadGeminiInsight(
+async function loadNativeInsight(
   game: GameHeroData,
   options: AssistantOptions,
 ): Promise<AssistantInsight | null> {
-  if (!options.geminiApiKey.trim()) {
+  try {
+    const response = await invoke<NativeAiTipResponse>("generate_ai_tip", {
+      request: {
+        provider: options.geminiApiKey.trim() ? "gemini" : "ollama",
+        api_key: options.geminiApiKey,
+        ollama_url: options.ollamaUrl,
+        ollama_model: options.ollamaModel,
+        language: options.language,
+        game_title: game.title,
+        platform: `${game.platform} / ${game.source}`,
+        description: game.description,
+      },
+    });
+
+    if (!response.body.trim()) {
+      return null;
+    }
+
+    return {
+      ...response,
+      updatedAt: new Date().toISOString(),
+    };
+  } catch {
     return null;
   }
-
-  const url = new URL(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
-  );
-  url.searchParams.set("key", options.geminiApiKey);
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: buildPrompt(game, options.language) }],
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const data = (await response.json()) as GeminiResponse;
-  const body = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-
-  if (!body) {
-    return null;
-  }
-
-  return {
-    title: "Snext AI",
-    body,
-    source: "gemini",
-    updatedAt: new Date().toISOString(),
-  };
 }
 
-async function loadOllamaInsight(
+async function loadBrowserOllamaInsight(
   game: GameHeroData,
   options: AssistantOptions,
 ): Promise<AssistantInsight | null> {
@@ -163,35 +125,56 @@ async function loadOllamaInsight(
     return null;
   }
 
-  const response = await fetch(`${options.ollamaUrl.replace(/\/$/, "")}/api/generate`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: options.ollamaModel,
-      prompt: buildPrompt(game, options.language),
-      stream: false,
-    }),
-  });
+  const languageName =
+    options.language === "en"
+      ? "English"
+      : options.language === "pt"
+        ? "Portuguese"
+        : "Spanish";
+  const prompt = [
+    `Answer in ${languageName}.`,
+    "You are Snext, a concise gaming companion shown on a secondary monitor.",
+    "Give one practical, non-spoiler gameplay tip for the detected game.",
+    "Avoid pretending you know the player's exact mission unless it is provided.",
+    "Keep the answer under 55 words.",
+    `Game title: ${game.title}`,
+    `Platform/source: ${game.platform} / ${game.source}`,
+    `Description: ${game.description}`,
+  ].join("\n");
 
-  if (!response.ok) {
+  try {
+    const response = await fetch(`${options.ollamaUrl.replace(/\/$/, "")}/api/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: options.ollamaModel,
+        prompt,
+        stream: false,
+      }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as { response?: string };
+    const body = data.response?.trim();
+
+    if (!body) {
+      return null;
+    }
+
+    return {
+      title: "Snext AI",
+      body,
+      source: "ollama",
+      updatedAt: new Date().toISOString(),
+    };
+  } catch {
     return null;
   }
-
-  const data = (await response.json()) as OllamaResponse;
-  const body = data.response?.trim();
-
-  if (!body) {
-    return null;
-  }
-
-  return {
-    title: "Snext AI",
-    body,
-    source: "ollama",
-    updatedAt: new Date().toISOString(),
-  };
 }
 
 export async function loadAssistantInsight(
@@ -206,8 +189,8 @@ export async function loadAssistantInsight(
   }
 
   const insight =
-    (await loadGeminiInsight(game, options)) ??
-    (await loadOllamaInsight(game, options)) ??
+    (await loadNativeInsight(game, options)) ??
+    (await loadBrowserOllamaInsight(game, options)) ??
     localInsight(game, options.language);
 
   writeCachedInsight(key, insight);

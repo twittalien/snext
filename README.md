@@ -15,26 +15,27 @@ This branch contains the shell v3 foundation converted into a runnable applicati
 - Spanish, English and Portuguese copy foundation;
 - light, dark and automatic themes;
 - live weather lookup through Open-Meteo or OpenWeatherMap;
-- native Tauri commands for CPU, RAM, platform and process count;
+- native Tauri commands for CPU, RAM, platform, process count, GPU, VRAM, temperatures and battery when Linux/Bazzite readers are available;
 - active-game detection from running processes, emulator arguments and RetroArch history;
 - platform visual badges for common Bazzite/EmuDeck targets;
 - SteamGridDB artwork enrichment when an API key is configured;
 - RetroAchievements recent activity when user/API key are configured;
 - achievements carousel with 30s default rotation, hover pause and detail modal;
 - Spotify currently-playing support when a valid access token is available;
-- contextual assistant tips through Gemini, Ollama or local fallback;
+- contextual assistant tips through Gemini, Ollama or local fallback proxied by Tauri commands;
+- Discord server member integration through an official bot token and guild ID;
 - browser-readable system/network fallback metrics when not running inside Tauri;
 - local fallback artwork so the UI renders without missing assets;
 - prepared data contracts for game, Spotify, weather, system and integration widgets;
 - recovered implementation plan in `docs/conversation-plan.md`.
 
-Some integrations still need provider-specific authentication before they can be fully live:
+Some integrations still need provider-specific authentication or OS support before every value can be fully live:
 
 - Spotify requires OAuth;
-- Discord presence requires an app/client integration;
+- Discord requires an official Discord application/bot added to the target server. REST member lookup is wired; rich "playing now" presence still requires a Gateway/client integration and Discord privileged intents;
 - SteamGridDB and RetroAchievements require API keys;
-- GPU, VRAM, temperatures and battery still need Linux/Bazzite-specific native readers;
-- Snext AI currently runs from the frontend for MVP; production should proxy secrets through Tauri/keyring.
+- GPU/VRAM uses `nvidia-smi`; CPU temperatures use `sensors`; battery uses `upower`. Missing tools or permissions fall back gracefully;
+- Snext AI calls Gemini/Ollama through Tauri/Rust. The next production hardening step is storing secrets in the OS keyring instead of `localStorage`.
 
 ## Requirements
 
@@ -170,8 +171,8 @@ This repo includes a local `.npmrc` pointing to the public npm registry so insta
 
 ## Next Implementation Steps
 
-1. Move secrets, Gemini calls and OAuth flows out of the frontend and into Tauri/Rust commands.
-2. Add GPU, VRAM, temperatures, battery and monitor selection commands.
-3. Add provider adapters for Spotify, Discord, RetroAchievements and SteamGridDB.
+1. Move local secrets from `localStorage` into the OS keyring through Tauri.
+2. Add OAuth flows for Spotify and any future Discord rich-presence client flow.
+3. Add AMD/Intel GPU readers alongside the current `nvidia-smi` path.
 4. Replace remaining hardcoded Spanish strings inside feature components with the i18n layer.
 5. Add automated checks with TypeScript, Vitest and Playwright screenshot smoke tests.

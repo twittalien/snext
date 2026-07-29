@@ -50,6 +50,8 @@ type Settings = {
   ollamaUrl: string;
   ollamaModel: string;
   discordMode: "disabled" | "rpc" | "server";
+  discordBotToken: string;
+  discordGuildId: string;
   achievementRotationSeconds: 10 | 20 | 30 | 60;
 };
 
@@ -87,6 +89,8 @@ const defaultSettings: Settings = {
   ollamaUrl: "http://localhost:11434",
   ollamaModel: "llama3.1",
   discordMode: "disabled",
+  discordBotToken: "",
+  discordGuildId: "",
   achievementRotationSeconds: 30,
 };
 
@@ -247,6 +251,8 @@ function App() {
       retroAchievementsApiKey: settings.retroAchievementsApiKey,
       spotifyAccessToken: settings.spotifyAccessToken,
       discordMode: settings.discordMode,
+      discordBotToken: settings.discordBotToken,
+      discordGuildId: settings.discordGuildId,
     })
       .then((data) => {
         if (active) {
@@ -272,6 +278,8 @@ function App() {
     settings.weatherLocation,
     settings.weatherProvider,
     settings.discordMode,
+    settings.discordBotToken,
+    settings.discordGuildId,
   ]);
 
   useEffect(() => {
@@ -374,6 +382,7 @@ function App() {
       steamGridDbApiKey: "",
       openWeatherMapApiKey: "",
       geminiApiKey: "",
+      discordBotToken: "",
     }));
   };
 
@@ -554,6 +563,21 @@ function App() {
                 </i>
               </div>
 
+              {dashboardData?.system.vramLabel ? (
+                <div>
+                  <span>VRAM</span>
+                  <strong>{dashboardData.system.vramLabel}</strong>
+
+                  <i>
+                    <b
+                      style={{
+                        width: `${dashboardData.system.vramLoad ?? 0}%`,
+                      }}
+                    />
+                  </i>
+                </div>
+              ) : null}
+
               <div>
                 <span>RAM</span>
                 <strong>
@@ -569,6 +593,24 @@ function App() {
                 </i>
               </div>
 
+              {dashboardData?.system.cpuTemperatureLabel ? (
+                <div>
+                  <span>CPU temp</span>
+                  <strong>{dashboardData.system.cpuTemperatureLabel}</strong>
+
+                  <i>
+                    <b
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Number.parseInt(dashboardData.system.cpuTemperatureLabel, 10) || 0,
+                        )}%`,
+                      }}
+                    />
+                  </i>
+                </div>
+              ) : null}
+
               <div>
                 <span>{t.network}</span>
                 <strong>
@@ -583,6 +625,21 @@ function App() {
                   />
                 </i>
               </div>
+
+              {dashboardData?.system.batteryLabel ? (
+                <div>
+                  <span>Batería</span>
+                  <strong>{dashboardData.system.batteryLabel}</strong>
+
+                  <i>
+                    <b
+                      style={{
+                        width: `${dashboardData.system.batteryLoad ?? 0}%`,
+                      }}
+                    />
+                  </i>
+                </div>
+              ) : null}
             </div>
           </article>
 
@@ -1084,6 +1141,32 @@ function App() {
                     <option value="server">Servidor compartido</option>
                   </select>
                 </label>
+
+                <label>
+                  Discord bot token
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.discordBotToken}
+                    onChange={(event) =>
+                      updateSetting("discordBotToken", event.target.value)
+                    }
+                    placeholder="Bot token oficial"
+                  />
+                </label>
+
+                <label>
+                  Discord guild ID
+
+                  <input
+                    value={settings.discordGuildId}
+                    onChange={(event) =>
+                      updateSetting("discordGuildId", event.target.value)
+                    }
+                    placeholder="Servidor de Discord"
+                  />
+                </label>
               </section>
 
               <section>
@@ -1098,9 +1181,10 @@ function App() {
                 </button>
 
                 <p className="hint">
-                  Las claves se guardan localmente para desarrollo. La
-                  versión de producción debe moverlas al keyring del
-                  sistema mediante Tauri.
+                  Las llamadas de Gemini y Discord pasan por Tauri. Las
+                  claves se conservan localmente durante desarrollo; el
+                  siguiente endurecimiento es guardarlas en el keyring del
+                  sistema.
                 </p>
               </section>
 

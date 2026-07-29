@@ -16,6 +16,11 @@ export type SystemMetrics = {
   cpuLoad: number;
   gpuLabel: string;
   gpuLoad: number;
+  vramLabel?: string;
+  vramLoad?: number;
+  cpuTemperatureLabel?: string;
+  batteryLabel?: string;
+  batteryLoad?: number;
   memoryLabel: string;
   memoryLoad: number;
   networkLabel: string;
@@ -43,6 +48,8 @@ export type DashboardDataOptions = {
   retroAchievementsApiKey: string;
   spotifyAccessToken: string;
   discordMode: "disabled" | "rpc" | "server";
+  discordBotToken: string;
+  discordGuildId: string;
 };
 
 export type AchievementItem = {
@@ -144,6 +151,18 @@ type SystemSnapshot = {
   platform: string;
 };
 
+type HardwareSnapshot = {
+  gpu_name: string;
+  gpu_usage_percent?: number | null;
+  gpu_temperature_c?: number | null;
+  used_vram_mb?: number | null;
+  total_vram_mb?: number | null;
+  cpu_temperature_c?: number | null;
+  battery_percent?: number | null;
+  battery_state: string;
+  source: string;
+};
+
 type ActiveGame = {
   name: string;
   process_name: string;
@@ -152,6 +171,11 @@ type ActiveGame = {
   metadata_hint: string;
   detected: boolean;
   note: string;
+};
+
+type DiscordPresenceResponse = {
+  friends: FriendActivity[];
+  source: "discord-bot" | "not-configured";
 };
 
 const fallbackGame: GameHeroData = {
@@ -332,6 +356,10 @@ const fallbackSystem: SystemMetrics = {
   networkLoad: 76,
 };
 
+function formatHardwareTemperature(value?: number | null) {
+  return typeof value === "number" ? `${Math.round(value)} °C` : undefined;
+}
+
 function weatherCodeToCondition(code = 0): WeatherCondition {
   if (code === 0) return "clear";
   if ([1, 2].includes(code)) return "partly-cloudy";
@@ -509,21 +537,75 @@ function browserSystemMetrics(): SystemMetrics {
 }
 
 async function loadSystemMetrics(): Promise<SystemMetrics> {
-  const snapshot = await invokeOptional<SystemSnapshot>("get_system_snapshot");
+  const [snapshot, hardware] = await Promise.all([
+    invokeOptional<SystemSnapshot>("get_system_snapshot"),
+    invokeOptional<HardwareSnapshot>("get_hardware_snapshot"),
+  ]);
 
   if (!snapshot) {
-    return browserSystemMetrics();
+    return {
+      ...browserSystemMetrics(),
+      gpuLabel:
+        hardware?.gpu_name && hardware.gpu_name !== "No detectada"
+          ? hardware.gpu_name
+          : fallbackSystem.gpuLabel,
+      gpuLoad:
+        typeof hardware?.gpu_usage_percent === "number"
+          ? Math.round(hardware.gpu_usage_percent)
+          : fallbackSystem.gpuLoad,
+      cpuTemperatureLabel: formatHardwareTemperature(hardware?.cpu_temperature_c),
+      batteryLabel:
+        typeof hardware?.battery_percent === "number"
+          ? `${Math.round(hardware.battery_percent)}% · ${hardware.battery_state}`
+          : undefined,
+      batteryLoad:
+        typeof hardware?.battery_percent === "number"
+          ? Math.round(hardware.battery_percent)
+          : undefined,
+    };
   }
 
   const memoryLoad =
     snapshot.total_memory_mb > 0
       ? Math.round((snapshot.used_memory_mb / snapshot.total_memory_mb) * 100)
       : fallbackSystem.memoryLoad;
+  const vramLoad =
+    hardware?.total_vram_mb && hardware.total_vram_mb > 0 && hardware.used_vram_mb
+      ? Math.round((hardware.used_vram_mb / hardware.total_vram_mb) * 100)
+      : undefined;
 
   return {
     ...fallbackSystem,
     cpuLabel: `${Math.round(snapshot.cpu_usage_percent)}%`,
     cpuLoad: Math.min(100, Math.max(0, Math.round(snapshot.cpu_usage_percent))),
+    gpuLabel:
+      hardware?.gpu_name && hardware.gpu_name !== "No detectada"
+        ? `${hardware.gpu_name}${
+            typeof hardware.gpu_temperature_c === "number"
+              ? ` · ${Math.round(hardware.gpu_temperature_c)} °C`
+              : ""
+          }`
+        : fallbackSystem.gpuLabel,
+    gpuLoad:
+      typeof hardware?.gpu_usage_percent === "number"
+        ? Math.min(100, Math.max(0, Math.round(hardware.gpu_usage_percent)))
+        : fallbackSystem.gpuLoad,
+    vramLabel:
+      hardware?.used_vram_mb && hardware.total_vram_mb
+        ? `${(hardware.used_vram_mb / 1024).toFixed(1)} / ${(
+            hardware.total_vram_mb / 1024
+          ).toFixed(1)} GB`
+        : undefined,
+    vramLoad,
+    cpuTemperatureLabel: formatHardwareTemperature(hardware?.cpu_temperature_c),
+    batteryLabel:
+      typeof hardware?.battery_percent === "number"
+        ? `${Math.round(hardware.battery_percent)}% · ${hardware.battery_state}`
+        : undefined,
+    batteryLoad:
+      typeof hardware?.battery_percent === "number"
+        ? Math.min(100, Math.max(0, Math.round(hardware.battery_percent)))
+        : undefined,
     memoryLabel: `${(snapshot.used_memory_mb / 1024).toFixed(1)} / ${(
       snapshot.total_memory_mb / 1024
     ).toFixed(0)} GB`,
@@ -533,6 +615,38 @@ async function loadSystemMetrics(): Promise<SystemMetrics> {
     networkLabel: navigator.onLine ? "En línea" : "Sin conexión",
     networkLoad: navigator.onLine ? 76 : 0,
   };
+}
+
+async function loadDiscordFriends(
+  options: DashboardDataOptions,
+): Promise<FriendActivity[]> {
+  if (
+    options.discordMode !== "server" ||
+    !options.discordBotToken.trim() ||
+    !options.discordGuildId.trim()
+  ) {
+    return fallbackFriends;
+  }
+
+  try {
+    const response = await invoke<DiscordPresenceResponse>("fetch_discord_presence", {
+      request: {
+        bot_token: options.discordBotToken,
+        guild_id: options.discordGuildId,
+      },
+    });
+
+    if (!response.friends.length) {
+      return fallbackFriends;
+    }
+
+    return response.friends.map((friend) => ({
+      ...friend,
+      source: "discord",
+    }));
+  } catch {
+    return fallbackFriends;
+  }
 }
 
 async function loadActiveGame(): Promise<GameHeroData> {
@@ -781,12 +895,13 @@ export async function loadDashboardData(
         ? loadOpenWeatherMapWeather(location, options.openWeatherMapApiKey)
         : loadWeather(location, locale);
 
-    const [weather, system, detectedGame, track, achievements] = await Promise.all([
+    const [weather, system, detectedGame, track, achievements, friends] = await Promise.all([
       weatherPromise,
       loadSystemMetrics(),
       loadActiveGame(),
       loadSpotifyTrack(options.spotifyAccessToken),
       loadRetroAchievements(options),
+      loadDiscordFriends(options),
     ]);
     const game = await enrichGameWithProviders(detectedGame, options);
 
@@ -795,7 +910,7 @@ export async function loadDashboardData(
       track,
       achievements: achievements.items,
       achievementGames: achievements.games,
-      friends: fallbackFriends,
+      friends,
       weather,
       system,
       dataMode:
