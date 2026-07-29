@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Snext game hero artwork">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#19143d"/>
+      <stop offset=".45" stop-color="#3651a6"/>
+      <stop offset="1" stop-color="#33d5e8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".72" cy=".28" r=".38">
+      <stop stop-color="#fff2a6"/>
+      <stop offset=".35" stop-color="#ff68bc"/>
+      <stop offset="1" stop-color="#ff68bc" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <rect width="1600" height="900" fill="url(#glow)" opacity=".75"/>
+  <path d="M0 660c180-120 320-130 485-40 166 91 332 87 526-18 205-111 408-92 589 58v240H0z" fill="#090c1d" opacity=".72"/>
+  <path d="M0 735c220-76 453-89 700-38 269 56 575 49 900-24v227H0z" fill="#070915"/>
+  <circle cx="1165" cy="235" r="84" fill="#ffec8b"/>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" opacity=".65">
+    <path d="M174 164h88M218 120v88" stroke-width="12"/>
+    <path d="M1320 138l74 74M1394 138l-74 74" stroke-width="11"/>
+    <circle cx="304" cy="368" r="48" stroke-width="11"/>
+    <path d="M1248 498h96v96h-96z" stroke-width="11"/>
+  </g>
+</svg>

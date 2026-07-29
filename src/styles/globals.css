@@ -1,0 +1,151 @@
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--snext-bg);
+  font-family: var(--snext-font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  color: var(--snext-text);
+  background:
+    radial-gradient(
+      circle at 10% 8%,
+      rgba(134, 93, 255, 0.14),
+      transparent 32rem
+    ),
+    radial-gradient(
+      circle at 90% 32%,
+      rgba(53, 223, 240, 0.09),
+      transparent 30rem
+    ),
+    var(--snext-bg);
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+}
+
+button,
+select {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--snext-focus);
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  border: 0;
+}
+
+a {
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  overflow-wrap: break-word;
+}
+
+::selection {
+  color: #ffffff;
+  background: rgba(134, 93, 255, 0.72);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+}
+
+.snext-container {
+  width: min(
+    calc(100% - (var(--snext-content-gutter) * 2)),
+    var(--snext-content-max)
+  );
+  margin-inline: auto;
+}
+
+.snext-eyebrow {
+  margin: 0;
+  color: var(--snext-cyan-500);
+  font-size: var(--snext-text-xs);
+  font-weight: var(--snext-weight-bold);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.snext-muted {
+  color: var(--snext-text-muted);
+}
+
+.snext-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

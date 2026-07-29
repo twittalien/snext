@@ -1,0 +1,87 @@
+.snext-avatar-group {
+  display: flex;
+  align-items: center;
+  padding-left: 0.25rem;
+}
+
+.snext-avatar-group__item,
+.snext-avatar-group__more {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: visible;
+  margin-left: -0.35rem;
+  border: 0.1875rem solid #11131c;
+  border-radius: 50%;
+  color: #ffffff;
+  background:
+    linear-gradient(
+      145deg,
+      var(--snext-violet-500),
+      var(--snext-cyan-500)
+    );
+  font-size: 0.65rem;
+  font-weight: var(--snext-weight-bold);
+  box-shadow: var(--snext-shadow-sm);
+}
+
+.snext-avatar-group__item:first-child {
+  margin-left: 0;
+}
+
+.snext-avatar-group__item img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.snext-avatar-group--small
+  :is(.snext-avatar-group__item, .snext-avatar-group__more) {
+  width: 2rem;
+  height: 2rem;
+}
+
+.snext-avatar-group--medium
+  :is(.snext-avatar-group__item, .snext-avatar-group__more) {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.snext-avatar-group--large
+  :is(.snext-avatar-group__item, .snext-avatar-group__more) {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+.snext-avatar-group__more {
+  
+  background: #252837;
+}
+
+.snext-avatar-group__presence {
+  position: absolute;
+  right: -0.1rem;
+  bottom: -0.1rem;
+  width: 0.72rem;
+  height: 0.72rem;
+  border: 0.14rem solid #11131c;
+  border-radius: 50%;
+}
+
+.snext-avatar-group__presence--online {
+  background: var(--snext-success);
+}
+
+.snext-avatar-group__presence--idle {
+  background: var(--snext-warning);
+}
+
+.snext-avatar-group__presence--dnd {
+  background: var(--snext-danger);
+}
+
+.snext-avatar-group__presence--offline {
+  background: #747887;
+}

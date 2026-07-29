@@ -1,0 +1,58 @@
+.snext-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--snext-space-2);
+  width: fit-content;
+  min-height: 1.625rem;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid transparent;
+  border-radius: var(--snext-radius-round);
+  font-size: var(--snext-text-xs);
+  font-weight: var(--snext-weight-semibold);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.snext-badge i {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0.75rem currentColor;
+}
+
+.snext-badge--neutral {
+  color: var(--snext-text-muted);
+  border-color: var(--snext-border);
+  background: rgba(128, 128, 150, 0.08);
+}
+
+.snext-badge--brand {
+  color: var(--snext-cyan-400);
+  border-color: rgba(53, 223, 240, 0.24);
+  background: rgba(53, 223, 240, 0.08);
+}
+
+.snext-badge--success {
+  color: var(--snext-success);
+  border-color: rgba(79, 240, 180, 0.24);
+  background: rgba(79, 240, 180, 0.08);
+}
+
+.snext-badge--warning {
+  color: var(--snext-warning);
+  border-color: rgba(245, 185, 66, 0.24);
+  background: rgba(245, 185, 66, 0.08);
+}
+
+.snext-badge--danger {
+  color: var(--snext-danger);
+  border-color: rgba(237, 90, 103, 0.24);
+  background: rgba(237, 90, 103, 0.08);
+}
+
+.snext-badge--info {
+  color: var(--snext-info);
+  border-color: rgba(85, 168, 255, 0.24);
+  background: rgba(85, 168, 255, 0.08);
+}

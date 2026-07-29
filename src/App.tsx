@@ -1,0 +1,1116 @@
+import {
+  type ChangeEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import "./App.css";
+import { AchievementsCarousel } from "./features/achievements";
+import { GameHero } from "./features/game";
+import { SpotifyCard } from "./features/spotify";
+import { WeatherCard } from "./features/weather";
+import { getTranslation, type Language } from "./i18n";
+import {
+  loadDashboardData,
+  type DashboardData,
+} from "./services/dashboardData";
+import {
+  loadAssistantInsight,
+  type AssistantInsight,
+} from "./services/gameAssistant";
+
+type AvatarSource = "initials" | "local" | "steam" | "retro";
+type Theme = "auto" | "dark" | "light";
+
+type Settings = {
+  name: string;
+  language: Language;
+  theme: Theme;
+  retroAchievementsUser: string;
+  weatherLocation: string;
+  avatarSource: AvatarSource;
+  avatarData: string;
+  uiScale: number;
+  density: "comfortable" | "compact";
+  transparency: number;
+  dynamicBackgrounds: boolean;
+  startFullscreen: boolean;
+  preferredMonitor: string;
+  detectionRules: string;
+  steamUserId: string;
+  spotifyClientId: string;
+  spotifyAccessToken: string;
+  retroAchievementsApiKey: string;
+  steamWebApiKey: string;
+  steamGridDbApiKey: string;
+  weatherProvider: "open-meteo" | "openweathermap";
+  openWeatherMapApiKey: string;
+  weatherMotion: "full" | "reduced" | "off";
+  geminiApiKey: string;
+  ollamaUrl: string;
+  ollamaModel: string;
+  discordMode: "disabled" | "rpc" | "server";
+  achievementRotationSeconds: 10 | 20 | 30 | 60;
+};
+
+type Friend = {
+  name: string;
+  activity: string;
+  color: string;
+};
+
+const defaultSettings: Settings = {
+  name: "twittalien",
+  language: "es",
+  theme: "auto",
+  retroAchievementsUser: "twittalien",
+  weatherLocation: "Ubicación automática",
+  avatarSource: "initials",
+  avatarData: "",
+  uiScale: 100,
+  density: "comfortable",
+  transparency: 78,
+  dynamicBackgrounds: true,
+  startFullscreen: false,
+  preferredMonitor: "auto",
+  detectionRules: "retroarch\nryujinx\ncitra\nsteam\nheroic\nlutris",
+  steamUserId: "",
+  spotifyClientId: "",
+  spotifyAccessToken: "",
+  retroAchievementsApiKey: "",
+  steamWebApiKey: "",
+  steamGridDbApiKey: "",
+  weatherProvider: "open-meteo",
+  openWeatherMapApiKey: "",
+  weatherMotion: "full",
+  geminiApiKey: "",
+  ollamaUrl: "http://localhost:11434",
+  ollamaModel: "llama3.1",
+  discordMode: "disabled",
+  achievementRotationSeconds: 30,
+};
+
+const friends: Friend[] = [
+  {
+    name: "Nova",
+    activity: "Jugando Helldivers 2",
+    color: "#5ee7ff",
+  },
+  {
+    name: "Kiro",
+    activity: "En línea",
+    color: "#8467ff",
+  },
+  {
+    name: "Luz",
+    activity: "Escuchando Spotify",
+    color: "#ff6bb5",
+  },
+];
+
+function loadSettings(): Settings {
+  try {
+    const stored = localStorage.getItem("snext-settings");
+
+    if (!stored) {
+      return defaultSettings;
+    }
+
+    return {
+      ...defaultSettings,
+      ...(JSON.parse(stored) as Partial<Settings>),
+    };
+  } catch {
+    return defaultSettings;
+  }
+}
+
+function Logo() {
+  return (
+    <svg className="logo-mark" viewBox="0 0 72 72" aria-hidden="true">
+      <defs>
+        <linearGradient
+          id="logo-gradient"
+          x1="8"
+          y1="8"
+          x2="64"
+          y2="64"
+        >
+          <stop stopColor="#865dff" />
+          <stop offset="1" stopColor="#35def2" />
+        </linearGradient>
+      </defs>
+
+      <path
+        d="M52 18c-8-8-25-7-31 3-7 12 6 17 16 18 8 1 14 3 11 9-4 8-21 6-28-2"
+        fill="none"
+        stroke="url(#logo-gradient)"
+        strokeWidth="9"
+        strokeLinecap="round"
+      />
+
+      <path
+        d="M20 54c8 8 25 7 31-3 7-12-6-17-16-18-8-1-14-3-11-9 4-8 21-6 28 2"
+        fill="none"
+        stroke="url(#logo-gradient)"
+        strokeWidth="5"
+        strokeLinecap="round"
+        opacity=".9"
+      />
+    </svg>
+  );
+}
+
+function Icon({ children }: { children: string }) {
+  return (
+    <span className="icon" aria-hidden="true">
+      {children}
+    </span>
+  );
+}
+
+function App() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [now, setNow] = useState(new Date());
+  const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(
+    null,
+  );
+  const [assistantInsight, setAssistantInsight] =
+    useState<AssistantInsight | null>(null);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+
+  const t = getTranslation(settings.language);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("snext-settings", JSON.stringify(settings));
+    document.documentElement.dataset.theme = settings.theme;
+    document.documentElement.lang = settings.language;
+    document.documentElement.style.setProperty(
+      "--snext-user-scale",
+      `${settings.uiScale / 100}`,
+    );
+    document.documentElement.style.setProperty(
+      "--snext-user-surface-alpha",
+      `${settings.transparency / 100}`,
+    );
+    document.documentElement.dataset.density = settings.density;
+    document.documentElement.dataset.dynamicBackgrounds = String(
+      settings.dynamicBackgrounds,
+    );
+  }, [settings]);
+
+  useEffect(() => {
+    if (!settingsOpen) {
+      return;
+    }
+
+    const closeWithEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSettingsOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", closeWithEscape);
+
+    return () => {
+      document.removeEventListener("keydown", closeWithEscape);
+    };
+  }, [settingsOpen]);
+
+  const locale =
+    settings.language === "en"
+      ? "en-US"
+      : settings.language === "pt"
+        ? "pt-BR"
+        : "es-MX";
+
+  useEffect(() => {
+    let active = true;
+
+    setDataLoading(true);
+
+    loadDashboardData(settings.weatherLocation, locale, {
+      weatherProvider: settings.weatherProvider,
+      openWeatherMapApiKey: settings.openWeatherMapApiKey,
+      steamGridDbApiKey: settings.steamGridDbApiKey,
+      retroAchievementsUser: settings.retroAchievementsUser,
+      retroAchievementsApiKey: settings.retroAchievementsApiKey,
+      spotifyAccessToken: settings.spotifyAccessToken,
+      discordMode: settings.discordMode,
+    })
+      .then((data) => {
+        if (active) {
+          setDashboardData(data);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setDataLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    locale,
+    settings.openWeatherMapApiKey,
+    settings.retroAchievementsApiKey,
+    settings.retroAchievementsUser,
+    settings.spotifyAccessToken,
+    settings.steamGridDbApiKey,
+    settings.weatherLocation,
+    settings.weatherProvider,
+    settings.discordMode,
+  ]);
+
+  useEffect(() => {
+    if (!dashboardData?.game) {
+      return;
+    }
+
+    let active = true;
+
+    setAssistantLoading(true);
+
+    loadAssistantInsight(dashboardData.game, {
+      geminiApiKey: settings.geminiApiKey,
+      ollamaUrl: settings.ollamaUrl,
+      ollamaModel: settings.ollamaModel,
+      language: settings.language,
+    })
+      .then((insight) => {
+        if (active) {
+          setAssistantInsight(insight);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setAssistantLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    dashboardData?.game.title,
+    settings.geminiApiKey,
+    settings.language,
+    settings.ollamaModel,
+    settings.ollamaUrl,
+  ]);
+
+  const initials = useMemo(() => {
+    return (
+      settings.name
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((word) => word[0]?.toUpperCase())
+        .join("") || "SN"
+    );
+  }, [settings.name]);
+
+  const handleAvatarFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      window.alert(t.imageOnly);
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      window.alert(t.imageTooLarge);
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setSettings((currentSettings) => ({
+        ...currentSettings,
+        avatarSource: "local",
+        avatarData: String(reader.result ?? ""),
+      }));
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const updateSetting = <Key extends keyof Settings>(
+    key: Key,
+    value: Settings[Key],
+  ) => {
+    setSettings((currentSettings) => ({
+      ...currentSettings,
+      [key]: value,
+    }));
+  };
+
+  const clearLocalSecrets = () => {
+    setSettings((currentSettings) => ({
+      ...currentSettings,
+      spotifyClientId: "",
+      spotifyAccessToken: "",
+      retroAchievementsApiKey: "",
+      steamWebApiKey: "",
+      steamGridDbApiKey: "",
+      openWeatherMapApiKey: "",
+      geminiApiKey: "",
+    }));
+  };
+
+  const avatarContent =
+    settings.avatarSource === "local" && settings.avatarData ? (
+      <img src={settings.avatarData} alt="" />
+    ) : (
+      initials
+    );
+
+  const translatedFriends = (dashboardData?.friends ?? friends).map((friend) => {
+    if (friend.name === "Kiro") {
+      return {
+        ...friend,
+        activity: t.online,
+      };
+    }
+
+    if (friend.name === "Luz") {
+      return {
+        ...friend,
+        activity: t.listeningSpotify,
+      };
+    }
+
+    return friend;
+  });
+
+  const dataModeLabel =
+    dashboardData?.dataMode === "live"
+      ? "Datos en vivo"
+      : dataLoading
+        ? "Actualizando datos"
+        : "Modo fallback";
+  const assistantSourceLabel = assistantLoading
+    ? "Consultando IA"
+    : assistantInsight?.source === "gemini"
+      ? "Gemini"
+      : assistantInsight?.source === "ollama"
+        ? "Ollama local"
+        : dataModeLabel;
+
+  return (
+    <div className="app">
+      <div className="ambient ambient-purple" />
+      <div className="ambient ambient-cyan" />
+
+      <header className="topbar">
+        <div className="brand">
+          <Logo />
+
+          <div>
+            <strong>snext</strong>
+            <span>{t.gamingCompanion}</span>
+          </div>
+        </div>
+
+        <div className="topbar-actions">
+          <div className="user">
+            <span className="user-avatar">{avatarContent}</span>
+            <span>{settings.name}</span>
+          </div>
+
+          <button
+            className="settings-button"
+            type="button"
+            aria-label={t.settings}
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen(true)}
+          >
+            ⚙
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section className="dashboard">
+          <div className="game-hero-cell">
+            {dashboardData && <GameHero game={dashboardData.game} />}
+          </div>
+
+          <div className="music-card">
+            <SpotifyCard
+              track={dashboardData?.track}
+              connected={Boolean(dashboardData?.track)}
+            />
+          </div>
+
+          <div className="achievements-card">
+            <AchievementsCarousel
+              games={dashboardData?.achievementGames ?? []}
+              rotationSeconds={settings.achievementRotationSeconds}
+              title={t.achievements}
+            />
+          </div>
+
+          <div className="weather-card">
+            <WeatherCard
+              weather={dashboardData?.weather}
+              now={now}
+              locale={locale}
+              loading={dataLoading}
+              motion={settings.weatherMotion}
+            />
+          </div>
+
+          <article className="card friends-card">
+            <div className="card-title">
+              <Icon>DC</Icon>
+
+              <div>
+                <span>{t.discord}</span>
+                <strong>{t.onlineFriends}</strong>
+              </div>
+
+              <b className="counter">3</b>
+            </div>
+
+            <div className="friend-list">
+              {translatedFriends.map((friend) => (
+                <div className="friend" key={friend.name}>
+                  <span
+                    className="friend-avatar"
+                    style={{ background: friend.color }}
+                  >
+                    {friend.name[0]}
+                  </span>
+
+                  <div>
+                    <strong>{friend.name}</strong>
+                    <span>{friend.activity}</span>
+                  </div>
+
+                  <i />
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="card system-card">
+            <div className="card-title">
+              <Icon>PC</Icon>
+
+              <div>
+                <span>{t.bazzite}</span>
+                <strong>{t.yourSystem}</strong>
+              </div>
+            </div>
+
+            <div className="system-grid">
+              <div>
+                <span>CPU</span>
+                <strong>
+                  {dashboardData?.system.cpuLoad ?? 0}%
+                </strong>
+
+                <i>
+                  <b
+                    style={{
+                      width: `${dashboardData?.system.cpuLoad ?? 0}%`,
+                    }}
+                  />
+                </i>
+              </div>
+
+              <div>
+                <span>GPU</span>
+                <strong>
+                  {dashboardData?.system.gpuLoad ?? 0}%
+                </strong>
+
+                <i>
+                  <b
+                    style={{
+                      width: `${dashboardData?.system.gpuLoad ?? 0}%`,
+                    }}
+                  />
+                </i>
+              </div>
+
+              <div>
+                <span>RAM</span>
+                <strong>
+                  {dashboardData?.system.memoryLabel ?? "N/D"}
+                </strong>
+
+                <i>
+                  <b
+                    style={{
+                      width: `${dashboardData?.system.memoryLoad ?? 0}%`,
+                    }}
+                  />
+                </i>
+              </div>
+
+              <div>
+                <span>{t.network}</span>
+                <strong>
+                  {dashboardData?.system.networkLabel ?? "N/D"}
+                </strong>
+
+                <i>
+                  <b
+                    style={{
+                      width: `${dashboardData?.system.networkLoad ?? 0}%`,
+                    }}
+                  />
+                </i>
+              </div>
+            </div>
+          </article>
+
+          <article className="card assistant-card">
+            <div className="assistant-icon">✦</div>
+
+            <div>
+              <p className="eyebrow">
+                {assistantSourceLabel.toUpperCase()}
+              </p>
+              <h2>{assistantInsight?.title ?? t.aiTipTitle}</h2>
+              <p>{assistantInsight?.body ?? t.aiTip}</p>
+            </div>
+          </article>
+        </section>
+      </main>
+
+      {settingsOpen && (
+        <div className="settings-layer">
+          <button
+            className="backdrop"
+            type="button"
+            aria-label={t.settings}
+            onClick={() => setSettingsOpen(false)}
+          />
+
+          <aside
+            className="settings-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+          >
+            <header>
+              <div>
+                <p className="eyebrow">SNEXT</p>
+                <h2 id="settings-title">{t.settings}</h2>
+              </div>
+
+              <button
+                type="button"
+                aria-label={t.settings}
+                onClick={() => setSettingsOpen(false)}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="settings-content">
+              <section>
+                <h3>{t.profile}</h3>
+
+                <div className="profile-editor">
+                  <span className="profile-avatar">
+                    {avatarContent}
+                  </span>
+
+                  <div>
+                    <strong>
+                      {settings.name || "Snext Player"}
+                    </strong>
+                    <span>{t.profileDescription}</span>
+                  </div>
+                </div>
+
+                <label>
+                  {t.visibleName}
+
+                  <input
+                    value={settings.name}
+                    onChange={(event) =>
+                      updateSetting("name", event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  {t.avatarSource}
+
+                  <select
+                    value={settings.avatarSource}
+                    onChange={(event) =>
+                      updateSetting(
+                        "avatarSource",
+                        event.target.value as AvatarSource,
+                      )
+                    }
+                  >
+                    <option value="initials">{t.initials}</option>
+                    <option value="local">{t.localImage}</option>
+                    <option value="steam">{t.steamSoon}</option>
+                    <option value="retro">{t.retroSoon}</option>
+                  </select>
+                </label>
+
+                {settings.avatarSource === "local" && (
+                  <label>
+                    {t.selectImage}
+
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      onChange={handleAvatarFile}
+                    />
+                  </label>
+                )}
+
+                {(settings.avatarSource === "steam" ||
+                  settings.avatarSource === "retro") && (
+                  <p className="hint">{t.providerSoon}</p>
+                )}
+              </section>
+
+              <section>
+                <h3>{t.appearance}</h3>
+
+                <label>
+                  {t.language}
+
+                  <select
+                    value={settings.language}
+                    onChange={(event) =>
+                      updateSetting(
+                        "language",
+                        event.target.value as Language,
+                      )
+                    }
+                  >
+                    <option value="es">Español</option>
+                    <option value="en">English</option>
+                    <option value="pt">Português</option>
+                  </select>
+                </label>
+
+                <label>
+                  {t.theme}
+
+                  <select
+                    value={settings.theme}
+                    onChange={(event) =>
+                      updateSetting("theme", event.target.value as Theme)
+                    }
+                  >
+                    <option value="auto">{t.automatic}</option>
+                    <option value="dark">{t.dark}</option>
+                    <option value="light">{t.light}</option>
+                  </select>
+                </label>
+
+                <label>
+                  Escala de interfaz
+
+                  <input
+                    type="range"
+                    min="85"
+                    max="120"
+                    value={settings.uiScale}
+                    onChange={(event) =>
+                      updateSetting("uiScale", Number(event.target.value))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Densidad
+
+                  <select
+                    value={settings.density}
+                    onChange={(event) =>
+                      updateSetting(
+                        "density",
+                        event.target.value as Settings["density"],
+                      )
+                    }
+                  >
+                    <option value="comfortable">Cómoda</option>
+                    <option value="compact">Compacta</option>
+                  </select>
+                </label>
+
+                <label>
+                  Transparencia
+
+                  <input
+                    type="range"
+                    min="55"
+                    max="95"
+                    value={settings.transparency}
+                    onChange={(event) =>
+                      updateSetting(
+                        "transparency",
+                        Number(event.target.value),
+                      )
+                    }
+                  />
+                </label>
+
+                <label className="check-field">
+                  <input
+                    type="checkbox"
+                    checked={settings.dynamicBackgrounds}
+                    onChange={(event) =>
+                      updateSetting(
+                        "dynamicBackgrounds",
+                        event.target.checked,
+                      )
+                    }
+                  />
+                  Fondos dinámicos
+                </label>
+              </section>
+
+              <section>
+                <h3>Juegos y pantalla</h3>
+
+                <label className="check-field">
+                  <input
+                    type="checkbox"
+                    checked={settings.startFullscreen}
+                    onChange={(event) =>
+                      updateSetting("startFullscreen", event.target.checked)
+                    }
+                  />
+                  Iniciar en pantalla completa
+                </label>
+
+                <label>
+                  Monitor preferido
+
+                  <input
+                    value={settings.preferredMonitor}
+                    onChange={(event) =>
+                      updateSetting("preferredMonitor", event.target.value)
+                    }
+                    placeholder="auto, HDMI-1, DP-1"
+                  />
+                </label>
+
+                <label>
+                  Steam ID
+
+                  <input
+                    value={settings.steamUserId}
+                    onChange={(event) =>
+                      updateSetting("steamUserId", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Reglas de detección
+
+                  <textarea
+                    value={settings.detectionRules}
+                    onChange={(event) =>
+                      updateSetting("detectionRules", event.target.value)
+                    }
+                    rows={6}
+                  />
+                </label>
+              </section>
+
+              <section>
+                <h3>Logros</h3>
+
+                <label>
+                  Tiempo por juego
+
+                  <select
+                    value={settings.achievementRotationSeconds}
+                    onChange={(event) =>
+                      updateSetting(
+                        "achievementRotationSeconds",
+                        Number(event.target.value) as Settings["achievementRotationSeconds"],
+                      )
+                    }
+                  >
+                    <option value={10}>10 segundos</option>
+                    <option value={20}>20 segundos</option>
+                    <option value={30}>30 segundos</option>
+                    <option value={60}>60 segundos</option>
+                  </select>
+                </label>
+
+                <p className="hint">
+                  El carrusel pausa la rotación al pasar el cursor o al abrir
+                  el detalle del juego.
+                </p>
+              </section>
+
+              <section>
+                <h3>{t.climate}</h3>
+
+                <label>
+                  {t.location}
+
+                  <input
+                    value={settings.weatherLocation}
+                    onChange={(event) =>
+                      updateSetting("weatherLocation", event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  Proveedor
+
+                  <select
+                    value={settings.weatherProvider}
+                    onChange={(event) =>
+                      updateSetting(
+                        "weatherProvider",
+                        event.target.value as Settings["weatherProvider"],
+                      )
+                    }
+                  >
+                    <option value="open-meteo">Open-Meteo</option>
+                    <option value="openweathermap">OpenWeatherMap</option>
+                  </select>
+                </label>
+
+                <label>
+                  Animaciones meteorológicas
+
+                  <select
+                    value={settings.weatherMotion}
+                    onChange={(event) =>
+                      updateSetting(
+                        "weatherMotion",
+                        event.target.value as Settings["weatherMotion"],
+                      )
+                    }
+                  >
+                    <option value="full">Completas</option>
+                    <option value="reduced">Reducidas</option>
+                    <option value="off">Desactivadas</option>
+                  </select>
+                </label>
+              </section>
+
+              <section>
+                <h3>{t.integrations}</h3>
+
+                <label>
+                  Spotify Client ID
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.spotifyClientId}
+                    onChange={(event) =>
+                      updateSetting("spotifyClientId", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Spotify access token temporal
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.spotifyAccessToken}
+                    onChange={(event) =>
+                      updateSetting("spotifyAccessToken", event.target.value)
+                    }
+                    placeholder="OAuth PKCE pendiente"
+                  />
+                </label>
+
+                <label>
+                  RetroAchievements usuario
+
+                  <input
+                    value={settings.retroAchievementsUser}
+                    onChange={(event) =>
+                      updateSetting(
+                        "retroAchievementsUser",
+                        event.target.value,
+                      )
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  RetroAchievements API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.retroAchievementsApiKey}
+                    onChange={(event) =>
+                      updateSetting(
+                        "retroAchievementsApiKey",
+                        event.target.value,
+                      )
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Steam Web API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.steamWebApiKey}
+                    onChange={(event) =>
+                      updateSetting("steamWebApiKey", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  SteamGridDB API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.steamGridDbApiKey}
+                    onChange={(event) =>
+                      updateSetting("steamGridDbApiKey", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  OpenWeatherMap API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.openWeatherMapApiKey}
+                    onChange={(event) =>
+                      updateSetting(
+                        "openWeatherMapApiKey",
+                        event.target.value,
+                      )
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Gemini API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.geminiApiKey}
+                    onChange={(event) =>
+                      updateSetting("geminiApiKey", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Ollama URL
+
+                  <input
+                    value={settings.ollamaUrl}
+                    onChange={(event) =>
+                      updateSetting("ollamaUrl", event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  Ollama modelo
+
+                  <input
+                    value={settings.ollamaModel}
+                    onChange={(event) =>
+                      updateSetting("ollamaModel", event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  Discord
+
+                  <select
+                    value={settings.discordMode}
+                    onChange={(event) =>
+                      updateSetting(
+                        "discordMode",
+                        event.target.value as Settings["discordMode"],
+                      )
+                    }
+                  >
+                    <option value="disabled">Desactivado</option>
+                    <option value="rpc">RPC local</option>
+                    <option value="server">Servidor compartido</option>
+                  </select>
+                </label>
+              </section>
+
+              <section>
+                <h3>Sistema y privacidad</h3>
+
+                <button
+                  className="danger-action"
+                  type="button"
+                  onClick={clearLocalSecrets}
+                >
+                  Borrar claves locales
+                </button>
+
+                <p className="hint">
+                  Las claves se guardan localmente para desarrollo. La
+                  versión de producción debe moverlas al keyring del
+                  sistema mediante Tauri.
+                </p>
+              </section>
+
+              <p className="privacy">{t.demoWarning}</p>
+            </div>
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
