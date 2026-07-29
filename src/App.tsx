@@ -1,6 +1,19 @@
-import { type ChangeEvent, useEffect, useMemo, useState } from "react";
+import {
+  type ChangeEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import "./App.css";
 import { GameHero, type GameHeroData } from "./features/game";
+import {
+  SpotifyCard,
+  type SpotifyTrack,
+} from "./features/spotify";
+import {
+  WeatherCard,
+  type WeatherData,
+} from "./features/weather";
 import { getTranslation, type Language } from "./i18n";
 
 type AvatarSource = "initials" | "local" | "steam" | "retro";
@@ -16,6 +29,12 @@ type Settings = {
   avatarData: string;
 };
 
+type Friend = {
+  name: string;
+  activity: string;
+  color: string;
+};
+
 const defaultSettings: Settings = {
   name: "twittalien",
   language: "es",
@@ -27,12 +46,21 @@ const defaultSettings: Settings = {
 };
 
 const achievements = [
-  { name: "El viaje comienza", progress: 100 },
-  { name: "Coleccionista", progress: 72 },
-  { name: "Maestro del combate", progress: 43 },
+  {
+    name: "El viaje comienza",
+    progress: 100,
+  },
+  {
+    name: "Coleccionista",
+    progress: 72,
+  },
+  {
+    name: "Maestro del combate",
+    progress: 43,
+  },
 ];
 
-const friends = [
+const friends: Friend[] = [
   {
     name: "Nova",
     activity: "Jugando Helldivers 2",
@@ -62,6 +90,54 @@ const marioKartGame: GameHeroData = {
   rating: 4.7,
   ratingLabel: "94% recomendado",
   status: "playing",
+};
+
+const demoTrack: SpotifyTrack = {
+  title: "Uprising",
+  artist: "Muse",
+  album: "The Resistance",
+  artwork: "/demo/spotify/album.jpg",
+  progressMs: 134000,
+  durationMs: 304000,
+  isPlaying: true,
+  device: "Dell G3 3500",
+  explicit: false,
+};
+
+const demoWeather: WeatherData = {
+  condition: "clear",
+  conditionLabel: "Noche despejada",
+  temperature: 18,
+  feelsLike: 17,
+  location: "Ubicación aproximada",
+  isDay: false,
+  forecast: [
+    {
+      label: "AHORA",
+      temperature: 18,
+      condition: "clear",
+    },
+    {
+      label: "20 H",
+      temperature: 17,
+      condition: "clear",
+    },
+    {
+      label: "22 H",
+      temperature: 16,
+      condition: "clear",
+    },
+    {
+      label: "00 H",
+      temperature: 15,
+      condition: "partly-cloudy",
+    },
+    {
+      label: "02 H",
+      temperature: 14,
+      condition: "partly-cloudy",
+    },
+  ],
 };
 
 function loadSettings(): Settings {
@@ -280,6 +356,14 @@ function App() {
     return friend;
   });
 
+  const weatherForLocation: WeatherData = {
+    ...demoWeather,
+    location:
+      settings.weatherLocation === defaultSettings.weatherLocation
+        ? demoWeather.location
+        : settings.weatherLocation,
+  };
+
   return (
     <div className="app">
       <div className="ambient ambient-purple" />
@@ -336,34 +420,9 @@ function App() {
             <GameHero game={marioKartGame} />
           </div>
 
-          <article className="card music-card">
-            <div className="card-title">
-              <Icon>♫</Icon>
-
-              <div>
-                <span>Spotify</span>
-                <strong>{t.nowPlaying}</strong>
-              </div>
-            </div>
-
-            <div className="song">
-              <div className="album-art">SN</div>
-
-              <div>
-                <h3>Midnight City</h3>
-                <p>M83 · Hurry Up, We’re Dreaming</p>
-              </div>
-            </div>
-
-            <div className="song-progress">
-              <span />
-            </div>
-
-            <div className="song-time">
-              <span>2:14</span>
-              <span>4:03</span>
-            </div>
-          </article>
+          <div className="music-card">
+            <SpotifyCard track={demoTrack} connected />
+          </div>
 
           <article className="card achievements-card">
             <div className="card-title">
@@ -393,31 +452,13 @@ function App() {
             </div>
           </article>
 
-          <article className="card weather-card">
-            <div className="card-title">
-              <Icon>☁</Icon>
-
-              <div>
-                <span>
-                  {settings.weatherLocation ===
-                  defaultSettings.weatherLocation
-                    ? t.automaticLocation
-                    : settings.weatherLocation}
-                </span>
-
-                <strong>{t.weather}</strong>
-              </div>
-            </div>
-
-            <div className="weather">
-              <strong>18°</strong>
-
-              <div>
-                <b>{t.partlyCloudy}</b>
-                <span>{t.feelsLike}</span>
-              </div>
-            </div>
-          </article>
+          <div className="weather-card">
+            <WeatherCard
+              weather={weatherForLocation}
+              now={now}
+              locale={locale}
+            />
+          </div>
 
           <article className="card friends-card">
             <div className="card-title">
@@ -505,7 +546,9 @@ function App() {
             <div className="assistant-icon">✦</div>
 
             <div>
-              <p className="eyebrow">{t.aiTipLabel.toUpperCase()}</p>
+              <p className="eyebrow">
+                {t.aiTipLabel.toUpperCase()}
+              </p>
               <h2>{t.aiTipTitle}</h2>
               <p>{t.aiTip}</p>
             </div>
@@ -548,10 +591,14 @@ function App() {
                 <h3>{t.profile}</h3>
 
                 <div className="profile-editor">
-                  <span className="profile-avatar">{avatarContent}</span>
+                  <span className="profile-avatar">
+                    {avatarContent}
+                  </span>
 
                   <div>
-                    <strong>{settings.name || "Snext Player"}</strong>
+                    <strong>
+                      {settings.name || "Snext Player"}
+                    </strong>
                     <span>{t.profileDescription}</span>
                   </div>
                 </div>
@@ -578,7 +625,8 @@ function App() {
                     onChange={(event) =>
                       setSettings((currentSettings) => ({
                         ...currentSettings,
-                        avatarSource: event.target.value as AvatarSource,
+                        avatarSource:
+                          event.target.value as AvatarSource,
                       }))
                     }
                   >

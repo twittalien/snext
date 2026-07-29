@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Recursos visuales locales usados durante prototipado
+public/demo/game/hero.*
+public/demo/spotify/album.*
