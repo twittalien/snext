@@ -812,3 +812,171 @@ main {
   color: var(--muted);
   font-size: 11px;
 }
+
+.game-hero-cell {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+@media (max-width: 960px) {
+  .game-hero-cell {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+}
+
+@media (max-width: 650px), (orientation: portrait) and (max-width: 900px) {
+  .game-hero-cell {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+}
+
+/* Distribución V2 después del hero */
+.music-card {
+  grid-column: span 5;
+  min-height: 18rem;
+}
+
+.achievements-card {
+  grid-column: span 7;
+  min-height: 18rem;
+}
+
+.weather-card,
+.friends-card {
+  grid-column: span 4;
+}
+
+.system-card {
+  grid-column: span 8;
+}
+
+.assistant-card {
+  grid-column: span 12;
+}
+
+@media (max-width: 960px) {
+  .music-card,
+  .achievements-card,
+  .system-card,
+  .assistant-card {
+    grid-column: span 12;
+  }
+
+  .weather-card,
+  .friends-card {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 650px), (orientation: portrait) and (max-width: 900px) {
+  .music-card,
+  .achievements-card,
+  .weather-card,
+  .friends-card,
+  .system-card,
+  .assistant-card {
+    grid-column: 1;
+    min-height: auto;
+  }
+}
+
+/* Legibilidad y composición para el monitor informativo */
+@media (min-width: 651px) {
+  .music-card {
+    grid-column: span 5;
+    min-height: 18rem;
+  }
+
+  .achievements-card {
+    grid-column: span 7;
+    min-height: 18rem;
+  }
+
+  .weather-card,
+  .friends-card {
+    grid-column: span 6;
+    min-height: 15rem;
+  }
+
+  .system-card,
+  .assistant-card {
+    grid-column: span 12;
+  }
+
+  .card {
+    padding: clamp(1.35rem, 2.2vw, 1.8rem);
+  }
+
+  .card-title span {
+    font-size: 0.76rem;
+  }
+
+  .card-title strong {
+    font-size: 1rem;
+  }
+
+  .song h3 {
+    font-size: 1.25rem;
+  }
+
+  .song p,
+  .friend span,
+  .weather span {
+    font-size: 0.8rem;
+  }
+
+  .achievement > div:first-child {
+    font-size: 0.82rem;
+  }
+
+  .friend strong {
+    font-size: 0.9rem;
+  }
+
+  .game-stats span,
+  .system-grid,
+  .assistant-card p:last-child {
+    font-size: 0.78rem;
+  }
+
+  .weather > strong {
+    font-size: 3.6rem;
+  }
+}
+
+/* Vertical real del segundo monitor: 1080 × 1920 */
+@media (orientation: portrait) and (min-width: 700px) {
+  .topbar,
+  main {
+    width: min(100% - 2rem, 82.5rem);
+  }
+
+  .dashboard {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .game-hero-cell {
+    grid-column: 1 / -1;
+  }
+
+  .music-card {
+    grid-column: span 5;
+  }
+
+  .achievements-card {
+    grid-column: span 7;
+  }
+
+  .weather-card,
+  .friends-card {
+    grid-column: span 6;
+  }
+
+  .system-card,
+  .assistant-card {
+    grid-column: 1 / -1;
+  }
+}

@@ -1,5 +1,6 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { GameHero, type GameHeroData } from "./features/game";
 import { getTranslation, type Language } from "./i18n";
 
 type AvatarSource = "initials" | "local" | "steam" | "retro";
@@ -32,10 +33,36 @@ const achievements = [
 ];
 
 const friends = [
-  { name: "Nova", activity: "Jugando Helldivers 2", color: "#5ee7ff" },
-  { name: "Kiro", activity: "En línea", color: "#8467ff" },
-  { name: "Luz", activity: "Escuchando Spotify", color: "#ff6bb5" },
+  {
+    name: "Nova",
+    activity: "Jugando Helldivers 2",
+    color: "#5ee7ff",
+  },
+  {
+    name: "Kiro",
+    activity: "En línea",
+    color: "#8467ff",
+  },
+  {
+    name: "Luz",
+    activity: "Escuchando Spotify",
+    color: "#ff6bb5",
+  },
 ];
+
+const marioKartGame: GameHeroData = {
+  title: "Mario Kart 8 Deluxe",
+  heroImage: "/demo/game/hero.jpg",
+  platform: "Nintendo Switch",
+  source: "Emulación",
+  description:
+    "Acelera a través de las pistas del Reino Champiñón bajo el agua, en el cielo, de cabeza y sin gravedad. Compite en multijugador local, torneos en línea y el renovado modo batalla.",
+  playtimeHours: 42,
+  progress: 68,
+  rating: 4.7,
+  ratingLabel: "94% recomendado",
+  status: "playing",
+};
 
 function loadSettings(): Settings {
   try {
@@ -58,7 +85,13 @@ function Logo() {
   return (
     <svg className="logo-mark" viewBox="0 0 72 72" aria-hidden="true">
       <defs>
-        <linearGradient id="logo-gradient" x1="8" y1="8" x2="64" y2="64">
+        <linearGradient
+          id="logo-gradient"
+          x1="8"
+          y1="8"
+          x2="64"
+          y2="64"
+        >
           <stop stopColor="#865dff" />
           <stop offset="1" stopColor="#35def2" />
         </linearGradient>
@@ -299,47 +332,9 @@ function App() {
         </section>
 
         <section className="dashboard">
-          <article className="card game-card">
-            <div className="card-heading">
-              <div>
-                <p className="eyebrow">{t.activeGame.toUpperCase()}</p>
-                <h2>The Legend of Zelda</h2>
-              </div>
-
-              <span className="status">
-                <i /> {t.inGame.toUpperCase()}
-              </span>
-            </div>
-
-            <div className="game-content">
-              <div className="game-cover">
-                <Logo />
-              </div>
-
-              <div className="game-details">
-                <span className="platform">{t.platform}</span>
-
-                <p>{t.gameDescription}</p>
-
-                <div className="game-stats">
-                  <div>
-                    <strong>42 h</strong>
-                    <span>{t.playedTime}</span>
-                  </div>
-
-                  <div>
-                    <strong>9.4</strong>
-                    <span>{t.rating}</span>
-                  </div>
-
-                  <div>
-                    <strong>68%</strong>
-                    <span>{t.progress}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </article>
+          <div className="game-hero-cell">
+            <GameHero game={marioKartGame} />
+          </div>
 
           <article className="card music-card">
             <div className="card-title">
