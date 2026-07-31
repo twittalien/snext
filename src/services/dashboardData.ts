@@ -149,6 +149,16 @@ type RetroAchievementsGameDetails = RetroAchievementsRecentGame & {
   Achievements?: Record<string, RetroAchievementApiItem>;
 };
 
+function retroAchievementsMediaUrl(path?: string, folder = "Images") {
+  if (!path) return undefined;
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalized = path.replace(/^\/+/, "");
+  if (normalized.toLowerCase().startsWith("images/") || normalized.toLowerCase().startsWith("badge/")) {
+    return `https://media.retroachievements.org/${normalized}`;
+  }
+  return `https://media.retroachievements.org/${folder}/${normalized}`;
+}
+
 type SpotifyPlaybackResponse = {
   is_playing?: boolean;
   progress_ms?: number;
@@ -788,23 +798,15 @@ async function loadRetroAchievements(
   }
 
   try {
-    const url = new URL(
-      "https://retroachievements.org/API/API_GetUserRecentlyPlayedGames.php",
-    );
-    url.searchParams.set("u", options.retroAchievementsUser);
-    url.searchParams.set("y", options.retroAchievementsApiKey);
-    url.searchParams.set("c", "3");
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      return {
-        items: fallbackAchievements,
-        games: fallbackAchievementGames,
-      };
-    }
-
-    const games = (await response.json()) as RetroAchievementsRecentGame[];
+    // Tauri performs these requests natively so the WebView's CORS policy
+    // cannot replace real RA data with the demo fallback.
+    const games = await invoke<RetroAchievementsGameDetails[]>("fetch_retro_achievements", {
+      request: {
+        username: options.retroAchievementsUser,
+        api_key: options.retroAchievementsApiKey,
+        count: 8,
+      },
+    });
 
     if (!Array.isArray(games) || games.length === 0) {
       return {
@@ -822,17 +824,8 @@ async function loadRetroAchievements(
       source: "retroachievements",
       unlocked: index === 0,
     }));
-    const achievementGames: AchievementGame[] = await Promise.all(games.slice(0, 8).map(async (game, index) => {
-      const gameId = game.GameID ?? game.ID;
-      let detailsResponse: Response | undefined;
-      if (gameId) {
-        detailsResponse = await fetch(
-          `https://retroachievements.org/API/API_GetGame.php?i=${gameId}&y=${encodeURIComponent(options.retroAchievementsApiKey)}`,
-        );
-      }
-      const detailsData = detailsResponse?.ok
-        ? (await detailsResponse.json()) as RetroAchievementsGameDetails
-        : undefined;
+    const achievementGames: AchievementGame[] = games.slice(0, 8).map((game, index) => {
+      const detailsData = game;
       const apiAchievements = Object.values(detailsData?.Achievements ?? {});
       const total = Math.max(
         1,
@@ -850,7 +843,7 @@ async function loadRetroAchievements(
         hardcore: Boolean(item.DateEarnedHardcore),
         unlockedAt: item.DateEarned ?? undefined,
         image: item.BadgeName
-          ? `https://media.retroachievements.org/Badge/${item.BadgeName}.png`
+          ? retroAchievementsMediaUrl(`${item.BadgeName}.png`, "Badge")
           : undefined,
       }));
 
@@ -859,21 +852,15 @@ async function loadRetroAchievements(
         title: detailsData?.Title ?? game.Title ?? `RetroAchievement ${index + 1}`,
         platform: detailsData?.ConsoleName ?? game.ConsoleName ?? "RetroArch",
         provider: "retroachievements",
-        image: detailsData?.ImageBoxArt
-          ? `https://media.retroachievements.org${detailsData.ImageBoxArt.startsWith("/") ? "" : "/"}${detailsData.ImageBoxArt}`
-          : game.ImageBoxArt
-            ? `https://media.retroachievements.org${game.ImageBoxArt.startsWith("/") ? "" : "/"}${game.ImageBoxArt}`
-            : "/demo/game/cover.svg",
-        heroImage: detailsData?.ImageTitle
-          ? `https://media.retroachievements.org${detailsData.ImageTitle.startsWith("/") ? "" : "/"}${detailsData.ImageTitle}`
-          : "/demo/game/hero.svg",
+        image: retroAchievementsMediaUrl(detailsData?.ImageBoxArt) ?? "/demo/game/cover.svg",
+        heroImage: retroAchievementsMediaUrl(detailsData?.ImageTitle) ?? "/demo/game/hero.svg",
         unlocked,
         total,
         points: Math.max(0, details.reduce((sum, detail) => sum + (detail.points ?? 0), 0)),
         recentAchievement: details.find((detail) => detail.unlocked) ?? details[0],
         achievements: details,
       };
-    }));
+    });
 
     return {
       items,

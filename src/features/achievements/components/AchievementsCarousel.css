@@ -318,6 +318,17 @@
   line-height: 1.2;
 }
 
+.achievement-tile p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 0.7rem;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .achievement-tile small {
   align-self: end;
   color: #ffd66e;

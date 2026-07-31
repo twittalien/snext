@@ -62,6 +62,13 @@ struct DiscordPresenceResponse {
     source: String,
 }
 
+#[derive(Deserialize)]
+struct RetroAchievementsRequest {
+    username: String,
+    api_key: String,
+    count: Option<u8>,
+}
+
 #[derive(Serialize)]
 struct ActiveGame {
     name: String,
@@ -513,6 +520,86 @@ async fn fetch_discord_presence(
 }
 
 #[tauri::command]
+async fn fetch_retro_achievements(
+    request: RetroAchievementsRequest,
+) -> Result<Vec<serde_json::Value>, String> {
+    if request.username.trim().is_empty() || request.api_key.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("Snext/0.1 RetroAchievements integration")
+        .build()
+        .map_err(|error| error.to_string())?;
+
+    let count = request.count.unwrap_or(8).min(50).to_string();
+    let recent_response = client
+        .get("https://retroachievements.org/API/API_GetUserRecentlyPlayedGames.php")
+        .query(&[
+            ("u", request.username.trim()),
+            ("y", request.api_key.trim()),
+            ("c", count.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if !recent_response.status().is_success() {
+        return Err(format!(
+            "RetroAchievements respondió {} al consultar los juegos recientes",
+            recent_response.status()
+        ));
+    }
+
+    let recent_games = recent_response
+        .json::<Vec<serde_json::Value>>()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut enriched_games = Vec::with_capacity(recent_games.len());
+    for game in recent_games.into_iter().take(8) {
+        let game_id = game
+            .get("GameID")
+            .and_then(serde_json::Value::as_u64)
+            .or_else(|| game.get("ID").and_then(serde_json::Value::as_u64));
+
+        let Some(game_id) = game_id else {
+            enriched_games.push(game);
+            continue;
+        };
+
+        let details_response = client
+            .get("https://retroachievements.org/API/API_GetGame.php")
+            .query(&[("i", game_id.to_string()), ("y", request.api_key.clone())])
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+
+        if details_response.status().is_success() {
+            if let Ok(mut details) = details_response.json::<serde_json::Value>().await {
+                // Keep the user's progress fields from the recent-games response
+                // when the game endpoint only returns set metadata.
+                if let (Some(details_object), Some(recent_object)) =
+                    (details.as_object_mut(), game.as_object())
+                {
+                    for (key, value) in recent_object {
+                        details_object
+                            .entry(key.clone())
+                            .or_insert_with(|| value.clone());
+                    }
+                }
+                enriched_games.push(details);
+                continue;
+            }
+        }
+
+        enriched_games.push(game);
+    }
+
+    Ok(enriched_games)
+}
+
+#[tauri::command]
 fn detect_active_game() -> ActiveGame {
     let mut system = System::new_all();
     system.refresh_processes(ProcessesToUpdate::All, true);
@@ -680,6 +767,7 @@ pub fn run() {
             get_hardware_snapshot,
             generate_ai_tip,
             fetch_discord_presence,
+            fetch_retro_achievements,
             detect_active_game
         ])
         .run(tauri::generate_context!())

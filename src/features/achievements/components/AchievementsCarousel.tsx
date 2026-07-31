@@ -82,7 +82,7 @@ export function AchievementsCarousel({
   const visibleGames = useMemo(
     () =>
       games
-        .filter((game) => game.total > 0 && game.unlocked > 0)
+        .filter((game) => game.total > 0)
         .slice(0, 10),
     [games],
   );
@@ -310,6 +310,11 @@ export function AchievementsCarousel({
                       ? "Logro oculto"
                       : achievement.name}
                   </strong>
+                  <p>
+                    {achievement.hidden && !achievement.unlocked
+                      ? "Descripción oculta"
+                      : achievement.description}
+                  </p>
                   <small>{rewardLabel(achievement, selectedGame.provider)}</small>
                 </button>
               ))}
