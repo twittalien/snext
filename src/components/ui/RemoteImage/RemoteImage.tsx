@@ -1,0 +1,86 @@
+import { invoke } from "@tauri-apps/api/core";
+import {
+  useEffect,
+  useState,
+  type ImgHTMLAttributes,
+  type SyntheticEvent,
+} from "react";
+
+type RemoteImageResponse = {
+  data_url: string;
+};
+
+type RemoteImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
+  src?: string;
+  fallbackSrc?: string;
+};
+
+const imageCache = new Map<string, Promise<string>>();
+
+function isRemoteSource(src?: string) {
+  return Boolean(src && /^https:\/\//i.test(src));
+}
+
+function loadRemoteSource(src: string) {
+  const cached = imageCache.get(src);
+  if (cached) return cached;
+
+  const request = invoke<RemoteImageResponse>("fetch_remote_image", {
+    request: { url: src },
+  }).then((response) => response.data_url);
+  imageCache.set(src, request);
+  request.catch(() => imageCache.delete(src));
+  return request;
+}
+
+export function RemoteImage({
+  src,
+  fallbackSrc,
+  onError,
+  ...props
+}: RemoteImageProps) {
+  const [resolvedSrc, setResolvedSrc] = useState(
+    isRemoteSource(src) ? fallbackSrc : src,
+  );
+
+  useEffect(() => {
+    let active = true;
+    if (!src) {
+      setResolvedSrc(fallbackSrc);
+      return () => {
+        active = false;
+      };
+    }
+
+    if (!isRemoteSource(src)) {
+      setResolvedSrc(src);
+      return () => {
+        active = false;
+      };
+    }
+
+    setResolvedSrc(fallbackSrc);
+    loadRemoteSource(src)
+      .then((dataUrl) => {
+        if (active) setResolvedSrc(dataUrl);
+      })
+      .catch(() => {
+        if (active) setResolvedSrc(fallbackSrc);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [fallbackSrc, src]);
+
+  const handleError = (event: SyntheticEvent<HTMLImageElement>) => {
+    if (fallbackSrc && event.currentTarget.src !== fallbackSrc) {
+      setResolvedSrc(fallbackSrc);
+    }
+    onError?.(event);
+  };
+
+  if (!resolvedSrc) return null;
+
+  return <img {...props} src={resolvedSrc} onError={handleError} />;
+}

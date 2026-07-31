@@ -522,6 +522,32 @@
   font-size: var(--snext-text-xs);
 }
 
+.weather-v2--motion-reduced
+  :is(
+    .weather-v2__sun,
+    .weather-v2__cloud,
+    .weather-v2__rain i,
+    .weather-v2__lightning,
+    .weather-v2__snow i,
+    .weather-v2__fog i,
+    .weather-v2__stars i
+  ) {
+  animation-duration: 60s;
+}
+
+.weather-v2--motion-off
+  :is(
+    .weather-v2__sun,
+    .weather-v2__cloud,
+    .weather-v2__rain i,
+    .weather-v2__lightning,
+    .weather-v2__snow i,
+    .weather-v2__fog i,
+    .weather-v2__stars i
+  ) {
+  animation: none;
+}
+
 @keyframes weather-v2-breathe {
   to {
     transform: scale(1.08);

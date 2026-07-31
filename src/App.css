@@ -16,6 +16,8 @@
   --purple: #8c62ff;
   --cyan: #35dff0;
   --green: #4ff0b4;
+  --snext-user-scale: 1;
+  --snext-user-surface-alpha: 0.78;
 }
 
 :root[data-theme="light"] {
@@ -58,6 +60,7 @@ body,
 
 body {
   min-height: 100vh;
+  font-size: calc(1rem * var(--snext-user-scale));
   overflow-x: hidden;
   color: var(--text);
   background:
@@ -76,7 +79,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -87,7 +91,8 @@ button {
 
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid rgba(53, 223, 240, 0.5);
   outline-offset: 2px;
 }
@@ -356,7 +361,7 @@ main {
       rgba(255, 255, 255, 0.035),
       transparent 55%
     ),
-    var(--surface);
+    rgba(18, 21, 39, var(--snext-user-surface-alpha));
   box-shadow: 0 1.125rem 3.125rem rgba(0, 0, 0, 0.16);
   backdrop-filter: blur(1.375rem);
 }
@@ -386,6 +391,9 @@ main {
   border-radius: 0.75rem;
   color: var(--cyan);
   background: rgba(255, 255, 255, 0.035);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0;
 }
 
 .card-title div {
@@ -419,10 +427,33 @@ main {
 
 .achievement > div:first-child {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 0.5rem;
   font-size: 0.82rem;
+}
+
+.achievement span {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.achievement em {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.15rem;
+  padding: 0.15rem 0.42rem;
+  border: 1px solid rgba(53, 223, 240, 0.24);
+  border-radius: 999px;
+  color: var(--cyan);
+  background: rgba(53, 223, 240, 0.08);
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .progress,
@@ -670,6 +701,119 @@ main {
   border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 }
 
+.setup-guide {
+  color: #d9dbea;
+}
+
+.setup-guide details {
+  padding: 0.7rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.setup-guide summary {
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.setup-guide details p {
+  margin: 0.65rem 0 0;
+  color: #a7abbc;
+  font-size: 0.74rem;
+  line-height: 1.55;
+}
+
+.setup-guide code {
+  padding: 0.08rem 0.28rem;
+  border-radius: 0.25rem;
+  color: #8cecf4;
+  background: rgba(53, 223, 240, 0.1);
+  font-size: 0.7rem;
+}
+
+.art-diagnostics__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.art-diagnostics__heading h3 {
+  margin-bottom: 0.35rem;
+}
+
+.art-diagnostics__heading .hint {
+  margin: 0;
+}
+
+.diagnostic-action {
+  flex: 0 0 auto;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgba(53, 223, 240, 0.32);
+  border-radius: 0.45rem;
+  color: #b9f8ff;
+  background: rgba(53, 223, 240, 0.1);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.diagnostic-action:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.art-diagnostics__results {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.art-diagnostic {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left-width: 0.2rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.art-diagnostic--ok {
+  border-left-color: #49e6a5;
+}
+
+.art-diagnostic--warning {
+  border-left-color: #ffd66e;
+}
+
+.art-diagnostic--error {
+  border-left-color: #ff6d7a;
+}
+
+.art-diagnostic img {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.35rem;
+  object-fit: cover;
+}
+
+.art-diagnostic strong {
+  display: block;
+  color: #ffffff;
+  font-size: 0.74rem;
+}
+
+.art-diagnostic p {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+  color: #a7abbc;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
 .settings-content h3 {
   margin: 0 0 0.9375rem;
   font-size: 0.875rem;
@@ -685,7 +829,8 @@ main {
 }
 
 .settings-content input,
-.settings-content select {
+.settings-content select,
+.settings-content textarea {
   width: 100%;
   min-height: 2.75rem;
   padding: 0.625rem 0.75rem;
@@ -695,9 +840,55 @@ main {
   background: #090b12;
 }
 
+.settings-content textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.settings-content input[type="checkbox"] {
+  width: 1rem;
+  min-height: 1rem;
+  accent-color: var(--cyan);
+}
+
+.settings-content input[type="range"] {
+  padding: 0;
+  accent-color: var(--cyan);
+  background: transparent;
+}
+
+.check-field {
+  display: flex !important;
+  align-items: center;
+  grid-template-columns: none;
+  gap: 0.625rem !important;
+}
+
 .settings-content select option {
   color: #f8f9ff;
   background: #090b12;
+}
+
+.danger-action {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid rgba(237, 90, 103, 0.35);
+  border-radius: 0.75rem;
+  color: #ff8d9b;
+  background: rgba(237, 90, 103, 0.1);
+  font-weight: 750;
+}
+
+:root[data-density="compact"] .dashboard {
+  gap: 0.625rem;
+}
+
+:root[data-density="compact"] .card {
+  padding: 1rem;
+}
+
+:root[data-dynamic-backgrounds="false"] .ambient {
+  display: none;
 }
 
 .hint,
@@ -818,5 +1009,339 @@ main {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Visual reference alignment: fullscreen vertical gaming display mockup. */
+body {
+  display: flex;
+  justify-content: center;
+  padding: clamp(0.45rem, 1.4vw, 0.9rem);
+  background:
+    radial-gradient(circle at 18% 10%, rgba(53, 223, 240, 0.13), transparent 24rem),
+    radial-gradient(circle at 86% 18%, rgba(140, 98, 255, 0.16), transparent 28rem),
+    linear-gradient(145deg, #07101c, #030710 68%, #050817);
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  opacity: 0.12;
+  background-image:
+    radial-gradient(ellipse at center, transparent 58%, rgba(53, 223, 240, 0.15) 59%, transparent 61%),
+    linear-gradient(45deg, transparent 46%, rgba(255, 255, 255, 0.18) 47%, transparent 49%);
+  background-size: 13rem 9rem, 8rem 8rem;
+  content: "";
+}
+
+#root {
+  width: 100%;
+}
+
+.app {
+  width: min(100%, 67.5rem);
+  min-height: calc(100vh - clamp(0.9rem, 2.8vw, 1.8rem));
+  margin-inline: auto;
+  padding: clamp(0.55rem, 1.15vw, 0.85rem);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: clamp(1rem, 2.6vw, 1.65rem);
+  background:
+    linear-gradient(145deg, rgba(10, 18, 31, 0.98), rgba(5, 9, 17, 0.985)),
+    #070b13;
+  box-shadow:
+    0 2.5rem 8rem rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(53, 223, 240, 0.04);
+}
+
+.ambient {
+  opacity: 0.75;
+}
+
+.topbar,
+main {
+  width: 100%;
+}
+
+.topbar {
+  min-height: 3.8rem;
+  padding: 0 0.55rem 0.7rem;
+  border-bottom: 0;
+}
+
+.brand {
+  gap: 0.65rem;
+}
+
+.logo-mark {
+  width: 2.45rem;
+  height: 2.45rem;
+}
+
+.brand strong {
+  color: #ffffff;
+  font-size: clamp(1.55rem, 2.8vw, 2rem);
+  letter-spacing: 0;
+}
+
+.brand span {
+  display: none;
+}
+
+.user {
+  align-items: center;
+  gap: 0.65rem;
+  color: #ffffff;
+}
+
+.user-avatar {
+  width: 2.7rem;
+  height: 2.7rem;
+  border: 1px solid rgba(53, 223, 240, 0.45);
+  box-shadow: 0 0 1.6rem rgba(53, 223, 240, 0.18);
+}
+
+.user > span:last-child {
+  max-width: 9rem;
+  overflow: hidden;
+  color: #ffffff;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-button {
+  width: 2.85rem;
+  height: 2.85rem;
+  border-color: rgba(255, 255, 255, 0.13);
+  border-radius: 0.75rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)),
+    rgba(13, 18, 31, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.dashboard {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.62rem;
+  padding: 0;
+}
+
+.game-hero-cell {
+  grid-column: 1 / -1;
+}
+
+.music-card {
+  grid-column: span 6;
+  min-height: 14.2rem;
+}
+
+.achievements-card {
+  grid-column: span 6;
+  min-height: 14.2rem;
+}
+
+.weather-card {
+  grid-column: 1 / -1;
+  min-height: 7.6rem;
+}
+
+.friends-card,
+.system-card,
+.assistant-card {
+  grid-column: span 4;
+  min-height: 13.5rem;
+}
+
+.card,
+.spotify-v2,
+.achievements-v2,
+.weather-v2,
+.game-hero {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.78rem;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
+    0 1.2rem 3.5rem rgba(0, 0, 0, 0.18);
+}
+
+.game-hero {
+  min-height: clamp(19rem, 39vw, 24.3rem);
+}
+
+.game-hero__content {
+  width: min(59%, 38rem);
+  padding: clamp(1.1rem, 2.4vw, 2rem);
+  padding-bottom: clamp(4.6rem, 9vw, 6.2rem);
+}
+
+.game-hero__identity h1 {
+  max-width: 13ch;
+  font-size: clamp(2.05rem, 4.2vw, 3.45rem);
+  letter-spacing: 0;
+}
+
+.game-hero__description {
+  -webkit-line-clamp: 2;
+}
+
+.game-hero__platform-stack {
+  top: 3.1rem;
+  right: 2rem;
+  opacity: 0.92;
+}
+
+.game-hero__platform-stack span {
+  width: clamp(3.8rem, 7vw, 5.1rem);
+  height: clamp(6.2rem, 11vw, 8.3rem);
+  border-radius: 1rem;
+}
+
+.game-hero__footer {
+  right: clamp(1.1rem, 2.4vw, 2rem);
+  bottom: clamp(1.1rem, 2.4vw, 1.65rem);
+  left: clamp(1.1rem, 2.4vw, 2rem);
+}
+
+.spotify-v2 {
+  min-height: inherit;
+}
+
+.spotify-v2__header {
+  padding: 1rem 1rem 0;
+}
+
+.spotify-v2__content {
+  grid-template-columns: minmax(5.4rem, 7.3rem) minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.spotify-v2__track {
+  gap: 0.85rem;
+}
+
+.spotify-v2__ambient-bars {
+  max-height: 3.8rem;
+}
+
+.achievements-v2 {
+  min-height: inherit;
+}
+
+.achievements-v2__content {
+  gap: 0.72rem;
+  padding: 1rem;
+}
+
+.achievements-v2__cover-wrap {
+  width: 4.8rem;
+  border-radius: 0.78rem;
+}
+
+.achievements-v2__identity > strong {
+  font-size: 1.1rem;
+}
+
+.achievements-v2__recent {
+  padding: 0.56rem;
+}
+
+.weather-v2 {
+  min-height: inherit;
+}
+
+.weather-v2__content {
+  min-height: 5rem;
+  padding: 1rem 1.1rem 0.65rem;
+}
+
+.weather-v2__current {
+  align-items: end;
+}
+
+.weather-v2__current strong {
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+}
+
+.weather-v2__forecast {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  padding: 0.55rem 0.85rem 0.7rem;
+}
+
+.weather-v2__forecast div:nth-child(n + 7) {
+  display: none;
+}
+
+.friends-card,
+.system-card,
+.assistant-card {
+  padding: 1rem;
+}
+
+.card-title {
+  margin-bottom: 0.8rem;
+}
+
+.friend-list {
+  gap: 0.55rem;
+}
+
+.system-grid {
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+
+.assistant-card {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(140, 98, 255, 0.3), transparent 44%),
+    linear-gradient(145deg, rgba(33, 23, 64, 0.9), rgba(15, 18, 35, 0.94));
+}
+
+.assistant-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.85rem;
+}
+
+.assistant-card h2 {
+  color: #a98cff;
+}
+
+@media (max-width: 780px) {
+  body {
+    padding: 0;
+  }
+
+  .app {
+    min-height: 100vh;
+    border-radius: 0;
+  }
+
+  .music-card,
+  .achievements-card,
+  .weather-card,
+  .friends-card,
+  .system-card,
+  .assistant-card {
+    grid-column: 1 / -1;
+  }
+
+  .game-hero__content {
+    width: 100%;
+    padding-right: 1rem;
+  }
+
+  .game-hero__platform-stack {
+    display: none;
+  }
+
+  .friends-card,
+  .system-card,
+  .assistant-card {
+    min-height: auto;
   }
 }

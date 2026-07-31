@@ -33,6 +33,7 @@ type WeatherCardProps = {
   now: Date;
   locale?: string;
   loading?: boolean;
+  motion?: "full" | "reduced" | "off";
   className?: string;
 };
 
@@ -153,6 +154,7 @@ export function WeatherCard({
   now,
   locale = "es-MX",
   loading = false,
+  motion = "full",
   className,
 }: WeatherCardProps) {
   const timeText = useMemo(
@@ -183,6 +185,7 @@ export function WeatherCard({
         className={[
           "weather-v2",
           "weather-v2--empty",
+          `weather-v2--motion-${motion}`,
           className,
         ]
           .filter(Boolean)
@@ -223,6 +226,7 @@ export function WeatherCard({
         weather.isDay
           ? "weather-v2--day"
           : "weather-v2--night",
+        `weather-v2--motion-${motion}`,
         className,
       ]
         .filter(Boolean)

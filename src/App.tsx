@@ -1,20 +1,28 @@
 import {
   type ChangeEvent,
+  useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
 import "./App.css";
-import { GameHero, type GameHeroData } from "./features/game";
-import {
-  SpotifyCard,
-  type SpotifyTrack,
-} from "./features/spotify";
-import {
-  WeatherCard,
-  type WeatherData,
-} from "./features/weather";
+import { AchievementsCarousel } from "./features/achievements";
+import { GameHero } from "./features/game";
+import { SpotifyCard } from "./features/spotify";
+import { WeatherCard } from "./features/weather";
 import { getTranslation, type Language } from "./i18n";
+import {
+  loadDashboardData,
+  type DashboardData,
+} from "./services/dashboardData";
+import {
+  loadAssistantInsight,
+  type AssistantInsight,
+} from "./services/gameAssistant";
+import {
+  runArtDiagnostics,
+  type ArtDiagnosticStep,
+} from "./services/artDiagnostics";
 
 type AvatarSource = "initials" | "local" | "steam" | "retro";
 type Theme = "auto" | "dark" | "light";
@@ -27,6 +35,29 @@ type Settings = {
   weatherLocation: string;
   avatarSource: AvatarSource;
   avatarData: string;
+  uiScale: number;
+  density: "comfortable" | "compact";
+  transparency: number;
+  dynamicBackgrounds: boolean;
+  startFullscreen: boolean;
+  preferredMonitor: string;
+  detectionRules: string;
+  steamUserId: string;
+  spotifyClientId: string;
+  spotifyAccessToken: string;
+  retroAchievementsApiKey: string;
+  steamWebApiKey: string;
+  steamGridDbApiKey: string;
+  weatherProvider: "open-meteo" | "openweathermap";
+  openWeatherMapApiKey: string;
+  weatherMotion: "full" | "reduced" | "off";
+  geminiApiKey: string;
+  ollamaUrl: string;
+  ollamaModel: string;
+  discordMode: "disabled" | "rpc" | "server";
+  discordBotToken: string;
+  discordGuildId: string;
+  achievementRotationSeconds: 10 | 20 | 30 | 60;
 };
 
 type Friend = {
@@ -43,22 +74,30 @@ const defaultSettings: Settings = {
   weatherLocation: "Ubicación automática",
   avatarSource: "initials",
   avatarData: "",
+  uiScale: 100,
+  density: "comfortable",
+  transparency: 78,
+  dynamicBackgrounds: true,
+  startFullscreen: false,
+  preferredMonitor: "auto",
+  detectionRules: "retroarch\nryujinx\ncitra\nsteam\nheroic\nlutris",
+  steamUserId: "",
+  spotifyClientId: "",
+  spotifyAccessToken: "",
+  retroAchievementsApiKey: "",
+  steamWebApiKey: "",
+  steamGridDbApiKey: "",
+  weatherProvider: "open-meteo",
+  openWeatherMapApiKey: "",
+  weatherMotion: "full",
+  geminiApiKey: "",
+  ollamaUrl: "http://localhost:11434",
+  ollamaModel: "llama3.1",
+  discordMode: "disabled",
+  discordBotToken: "",
+  discordGuildId: "",
+  achievementRotationSeconds: 30,
 };
-
-const achievements = [
-  {
-    name: "El viaje comienza",
-    progress: 100,
-  },
-  {
-    name: "Coleccionista",
-    progress: 72,
-  },
-  {
-    name: "Maestro del combate",
-    progress: 43,
-  },
-];
 
 const friends: Friend[] = [
   {
@@ -77,68 +116,6 @@ const friends: Friend[] = [
     color: "#ff6bb5",
   },
 ];
-
-const marioKartGame: GameHeroData = {
-  title: "Mario Kart 8 Deluxe",
-  heroImage: "/demo/game/hero.jpg",
-  platform: "Nintendo Switch",
-  source: "Emulación",
-  description:
-    "Acelera a través de las pistas del Reino Champiñón bajo el agua, en el cielo, de cabeza y sin gravedad. Compite en multijugador local, torneos en línea y el renovado modo batalla.",
-  playtimeHours: 42,
-  progress: 68,
-  rating: 4.7,
-  ratingLabel: "94% recomendado",
-  status: "playing",
-};
-
-const demoTrack: SpotifyTrack = {
-  title: "Uprising",
-  artist: "Muse",
-  album: "The Resistance",
-  artwork: "/demo/spotify/album.jpg",
-  progressMs: 134000,
-  durationMs: 304000,
-  isPlaying: true,
-  device: "Dell G3 3500",
-  explicit: false,
-};
-
-const demoWeather: WeatherData = {
-  condition: "clear",
-  conditionLabel: "Noche despejada",
-  temperature: 18,
-  feelsLike: 17,
-  location: "Ubicación aproximada",
-  isDay: false,
-  forecast: [
-    {
-      label: "AHORA",
-      temperature: 18,
-      condition: "clear",
-    },
-    {
-      label: "20 H",
-      temperature: 17,
-      condition: "clear",
-    },
-    {
-      label: "22 H",
-      temperature: 16,
-      condition: "clear",
-    },
-    {
-      label: "00 H",
-      temperature: 15,
-      condition: "partly-cloudy",
-    },
-    {
-      label: "02 H",
-      temperature: 14,
-      condition: "partly-cloudy",
-    },
-  ],
-};
 
 function loadSettings(): Settings {
   try {
@@ -205,6 +182,15 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [now, setNow] = useState(new Date());
   const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(
+    null,
+  );
+  const [assistantInsight, setAssistantInsight] =
+    useState<AssistantInsight | null>(null);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [artDiagnostics, setArtDiagnostics] = useState<ArtDiagnosticStep[]>([]);
+  const [artDiagnosticsRunning, setArtDiagnosticsRunning] = useState(false);
 
   const t = getTranslation(settings.language);
 
@@ -220,6 +206,18 @@ function App() {
     localStorage.setItem("snext-settings", JSON.stringify(settings));
     document.documentElement.dataset.theme = settings.theme;
     document.documentElement.lang = settings.language;
+    document.documentElement.style.setProperty(
+      "--snext-user-scale",
+      `${settings.uiScale / 100}`,
+    );
+    document.documentElement.style.setProperty(
+      "--snext-user-surface-alpha",
+      `${settings.transparency / 100}`,
+    );
+    document.documentElement.dataset.density = settings.density;
+    document.documentElement.dataset.dynamicBackgrounds = String(
+      settings.dynamicBackgrounds,
+    );
   }, [settings]);
 
   useEffect(() => {
@@ -246,6 +244,102 @@ function App() {
       : settings.language === "pt"
         ? "pt-BR"
         : "es-MX";
+
+  const refreshDashboard = useCallback(
+    async (showLoading = false) => {
+      if (showLoading) {
+        setDataLoading(true);
+      }
+
+      const data = await loadDashboardData(settings.weatherLocation, locale, {
+      weatherProvider: settings.weatherProvider,
+      openWeatherMapApiKey: settings.openWeatherMapApiKey,
+      steamGridDbApiKey: settings.steamGridDbApiKey,
+      retroAchievementsUser: settings.retroAchievementsUser,
+      retroAchievementsApiKey: settings.retroAchievementsApiKey,
+      spotifyAccessToken: settings.spotifyAccessToken,
+      discordMode: settings.discordMode,
+      discordBotToken: settings.discordBotToken,
+      discordGuildId: settings.discordGuildId,
+      });
+
+      setDashboardData(data);
+
+      if (showLoading) {
+        setDataLoading(false);
+      }
+    },
+    [
+      locale,
+      settings.discordBotToken,
+      settings.discordGuildId,
+      settings.discordMode,
+      settings.openWeatherMapApiKey,
+      settings.retroAchievementsApiKey,
+      settings.retroAchievementsUser,
+      settings.spotifyAccessToken,
+      settings.steamGridDbApiKey,
+      settings.weatherLocation,
+      settings.weatherProvider,
+    ],
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    const load = (showLoading = false) => {
+      refreshDashboard(showLoading).catch(() => {
+        if (active && showLoading) {
+          setDataLoading(false);
+        }
+      });
+    };
+
+    load(true);
+    const timer = window.setInterval(() => load(false), 10000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [refreshDashboard]);
+
+  useEffect(() => {
+    if (!dashboardData?.game) {
+      return;
+    }
+
+    let active = true;
+
+    setAssistantLoading(true);
+
+    loadAssistantInsight(dashboardData.game, {
+      geminiApiKey: settings.geminiApiKey,
+      ollamaUrl: settings.ollamaUrl,
+      ollamaModel: settings.ollamaModel,
+      language: settings.language,
+    })
+      .then((insight) => {
+        if (active) {
+          setAssistantInsight(insight);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setAssistantLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    dashboardData?.game.title,
+    settings.geminiApiKey,
+    settings.language,
+    settings.ollamaModel,
+    settings.ollamaUrl,
+  ]);
 
   const initials = useMemo(() => {
     return (
@@ -290,6 +384,46 @@ function App() {
     reader.readAsDataURL(file);
   };
 
+  const updateSetting = <Key extends keyof Settings>(
+    key: Key,
+    value: Settings[Key],
+  ) => {
+    setSettings((currentSettings) => ({
+      ...currentSettings,
+      [key]: value,
+    }));
+  };
+
+  const clearLocalSecrets = () => {
+    setSettings((currentSettings) => ({
+      ...currentSettings,
+      spotifyClientId: "",
+      spotifyAccessToken: "",
+      retroAchievementsApiKey: "",
+      steamWebApiKey: "",
+      steamGridDbApiKey: "",
+      openWeatherMapApiKey: "",
+      geminiApiKey: "",
+      discordBotToken: "",
+    }));
+  };
+
+  const diagnoseArt = async () => {
+    setArtDiagnosticsRunning(true);
+    setArtDiagnostics([]);
+    try {
+      const results = await runArtDiagnostics({
+        gameTitle: dashboardData?.game.title ?? "Sonic the Hedgehog",
+        steamGridDbApiKey: settings.steamGridDbApiKey,
+        retroAchievementsUser: settings.retroAchievementsUser,
+        retroAchievementsApiKey: settings.retroAchievementsApiKey,
+      });
+      setArtDiagnostics(results);
+    } finally {
+      setArtDiagnosticsRunning(false);
+    }
+  };
+
   const avatarContent =
     settings.avatarSource === "local" && settings.avatarData ? (
       <img src={settings.avatarData} alt="" />
@@ -297,48 +431,7 @@ function App() {
       initials
     );
 
-  const dateText = now.toLocaleDateString(locale, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-
-  const timeText = now.toLocaleTimeString(locale, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  const translatedAchievements = [
-    {
-      name:
-        settings.language === "en"
-          ? "The journey begins"
-          : settings.language === "pt"
-            ? "A jornada começa"
-            : achievements[0].name,
-      progress: achievements[0].progress,
-    },
-    {
-      name:
-        settings.language === "en"
-          ? "Collector"
-          : settings.language === "pt"
-            ? "Colecionador"
-            : achievements[1].name,
-      progress: achievements[1].progress,
-    },
-    {
-      name:
-        settings.language === "en"
-          ? "Combat master"
-          : settings.language === "pt"
-            ? "Mestre do combate"
-            : achievements[2].name,
-      progress: achievements[2].progress,
-    },
-  ];
-
-  const translatedFriends = friends.map((friend) => {
+  const translatedFriends = (dashboardData?.friends ?? friends).map((friend) => {
     if (friend.name === "Kiro") {
       return {
         ...friend,
@@ -356,13 +449,19 @@ function App() {
     return friend;
   });
 
-  const weatherForLocation: WeatherData = {
-    ...demoWeather,
-    location:
-      settings.weatherLocation === defaultSettings.weatherLocation
-        ? demoWeather.location
-        : settings.weatherLocation,
-  };
+  const dataModeLabel =
+    dashboardData?.dataMode === "live"
+      ? "Datos en vivo"
+      : dataLoading
+        ? "Actualizando datos"
+        : "Modo fallback";
+  const assistantSourceLabel = assistantLoading
+    ? "Consultando IA"
+    : assistantInsight?.source === "gemini"
+      ? "Gemini"
+      : assistantInsight?.source === "ollama"
+        ? "Ollama local"
+        : dataModeLabel;
 
   return (
     <div className="app">
@@ -398,71 +497,39 @@ function App() {
       </header>
 
       <main>
-        <section className="welcome">
-          <div>
-            <p className="eyebrow">{t.gameScreen.toUpperCase()}</p>
-
-            <h1>
-              {t.headlineStart} <span>{t.headlineAccent}</span>
-            </h1>
-
-            <p className="welcome-copy">{t.subtitle}</p>
-          </div>
-
-          <div className="date-widget">
-            <strong>{timeText}</strong>
-            <span>{dateText}</span>
-          </div>
-        </section>
-
         <section className="dashboard">
           <div className="game-hero-cell">
-            <GameHero game={marioKartGame} />
+            {dashboardData && <GameHero game={dashboardData.game} />}
           </div>
 
           <div className="music-card">
-            <SpotifyCard track={demoTrack} connected />
+            <SpotifyCard
+              track={dashboardData?.track}
+              connected={Boolean(dashboardData?.track)}
+            />
           </div>
 
-          <article className="card achievements-card">
-            <div className="card-title">
-              <Icon>◆</Icon>
-
-              <div>
-                <span>{t.progress}</span>
-                <strong>{t.achievements}</strong>
-              </div>
-
-              <b className="counter">18 / 42</b>
-            </div>
-
-            <div className="achievement-list">
-              {translatedAchievements.map((achievement) => (
-                <div className="achievement" key={achievement.name}>
-                  <div>
-                    <span>{achievement.name}</span>
-                    <strong>{achievement.progress}%</strong>
-                  </div>
-
-                  <div className="progress">
-                    <span style={{ width: `${achievement.progress}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </article>
+          <div className="achievements-card">
+            <AchievementsCarousel
+              games={dashboardData?.achievementGames ?? []}
+              rotationSeconds={settings.achievementRotationSeconds}
+              title={t.achievements}
+            />
+          </div>
 
           <div className="weather-card">
             <WeatherCard
-              weather={weatherForLocation}
+              weather={dashboardData?.weather}
               now={now}
               locale={locale}
+              loading={dataLoading}
+              motion={settings.weatherMotion}
             />
           </div>
 
           <article className="card friends-card">
             <div className="card-title">
-              <Icon>◉</Icon>
+              <Icon>DC</Icon>
 
               <div>
                 <span>{t.discord}</span>
@@ -495,7 +562,7 @@ function App() {
 
           <article className="card system-card">
             <div className="card-title">
-              <Icon>▦</Icon>
+              <Icon>PC</Icon>
 
               <div>
                 <span>{t.bazzite}</span>
@@ -506,39 +573,111 @@ function App() {
             <div className="system-grid">
               <div>
                 <span>CPU</span>
-                <strong>22%</strong>
+                <strong>
+                  {dashboardData?.system.cpuLoad ?? 0}%
+                </strong>
 
                 <i>
-                  <b style={{ width: "22%" }} />
+                  <b
+                    style={{
+                      width: `${dashboardData?.system.cpuLoad ?? 0}%`,
+                    }}
+                  />
                 </i>
               </div>
 
               <div>
                 <span>GPU</span>
-                <strong>64%</strong>
+                <strong>
+                  {dashboardData?.system.gpuLoad ?? 0}%
+                </strong>
 
                 <i>
-                  <b style={{ width: "64%" }} />
+                  <b
+                    style={{
+                      width: `${dashboardData?.system.gpuLoad ?? 0}%`,
+                    }}
+                  />
                 </i>
               </div>
+
+              {dashboardData?.system.vramLabel ? (
+                <div>
+                  <span>VRAM</span>
+                  <strong>{dashboardData.system.vramLabel}</strong>
+
+                  <i>
+                    <b
+                      style={{
+                        width: `${dashboardData.system.vramLoad ?? 0}%`,
+                      }}
+                    />
+                  </i>
+                </div>
+              ) : null}
 
               <div>
                 <span>RAM</span>
-                <strong>6.7 GB</strong>
+                <strong>
+                  {dashboardData?.system.memoryLabel ?? "N/D"}
+                </strong>
 
                 <i>
-                  <b style={{ width: "21%" }} />
+                  <b
+                    style={{
+                      width: `${dashboardData?.system.memoryLoad ?? 0}%`,
+                    }}
+                  />
                 </i>
               </div>
+
+              {dashboardData?.system.cpuTemperatureLabel ? (
+                <div>
+                  <span>CPU temp</span>
+                  <strong>{dashboardData.system.cpuTemperatureLabel}</strong>
+
+                  <i>
+                    <b
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Number.parseInt(dashboardData.system.cpuTemperatureLabel, 10) || 0,
+                        )}%`,
+                      }}
+                    />
+                  </i>
+                </div>
+              ) : null}
 
               <div>
                 <span>{t.network}</span>
-                <strong>486 Mbps</strong>
+                <strong>
+                  {dashboardData?.system.networkLabel ?? "N/D"}
+                </strong>
 
                 <i>
-                  <b style={{ width: "76%" }} />
+                  <b
+                    style={{
+                      width: `${dashboardData?.system.networkLoad ?? 0}%`,
+                    }}
+                  />
                 </i>
               </div>
+
+              {dashboardData?.system.batteryLabel ? (
+                <div>
+                  <span>Batería</span>
+                  <strong>{dashboardData.system.batteryLabel}</strong>
+
+                  <i>
+                    <b
+                      style={{
+                        width: `${dashboardData.system.batteryLoad ?? 0}%`,
+                      }}
+                    />
+                  </i>
+                </div>
+              ) : null}
             </div>
           </article>
 
@@ -547,10 +686,10 @@ function App() {
 
             <div>
               <p className="eyebrow">
-                {t.aiTipLabel.toUpperCase()}
+                {assistantSourceLabel.toUpperCase()}
               </p>
-              <h2>{t.aiTipTitle}</h2>
-              <p>{t.aiTip}</p>
+              <h2>{assistantInsight?.title ?? t.aiTipTitle}</h2>
+              <p>{assistantInsight?.body ?? t.aiTip}</p>
             </div>
           </article>
         </section>
@@ -587,6 +726,55 @@ function App() {
             </header>
 
             <div className="settings-content">
+              <section className="setup-guide">
+                <h3>Guía rápida de tarjetas</h3>
+                <p className="hint">
+                  Configura una integración, guarda los cambios cerrando este panel y espera la siguiente actualización automática.
+                </p>
+
+                <details open>
+                  <summary>Juego activo y SteamGridDB</summary>
+                  <p>
+                    La detección se actualiza cada 10 segundos. Para arte real, crea una API key en SteamGridDB, pégala en Integraciones y usa el nombre exacto del juego. La tarjeta usa hero, logo y portada vertical; si SteamGridDB no encuentra coincidencia conserva el último fallback.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>RetroAchievements</summary>
+                  <p>
+                    Escribe tu usuario y tu Web API Key. Snext consulta tus juegos recientes y el set completo: carátula, fondo, badges, nombres, puntos, descripciones y fecha de desbloqueo. Los logros ocultos sin desbloquear mantienen su estado protegido.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>IA con Ollama o Gemini</summary>
+                  <p>
+                    En Bazzite instala Ollama con <code>curl -fsSL https://ollama.com/install.sh | sh</code>; después ejecuta <code>ollama pull llama3.1</code> y verifica con <code>ollama run llama3.1</code>. Mantén Ollama ejecutándose y deja URL <code>http://localhost:11434</code> y modelo <code>llama3.1</code>. Como alternativa, pega una API key de Gemini. Si ninguna está disponible, Snext mostrará el consejo local y lo indicará como fallback.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>Spotify</summary>
+                  <p>
+                    Crea una aplicación en Spotify for Developers, usa el Client ID y genera un access token OAuth con los permisos <code>user-read-currently-playing</code> y <code>user-read-playback-state</code>. Pega el token temporal en el campo correspondiente; cuando expire, genera uno nuevo.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>Discord</summary>
+                  <p>
+                    En Discord Developer Portal crea una aplicación y un bot, copia su token y habilita el intent de miembros si el portal lo solicita. Invita el bot a tu servidor, copia el ID del servidor con Developer Mode y pega token e ID. Usa Servidor compartido para amigos; RPC local queda reservado para una integración nativa futura.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>Clima y sistema</summary>
+                  <p>
+                    Open-Meteo funciona sin key: escribe ciudad y conserva ese proveedor. OpenWeatherMap requiere su API key. En Bazzite, CPU, GPU, VRAM, temperatura y batería se leen de nvidia-smi, lm-sensors y UPower; si algún comando no está disponible, esa métrica aparece como N/D.
+                  </p>
+                </details>
+              </section>
+
               <section>
                 <h3>{t.profile}</h3>
 
@@ -609,10 +797,7 @@ function App() {
                   <input
                     value={settings.name}
                     onChange={(event) =>
-                      setSettings((currentSettings) => ({
-                        ...currentSettings,
-                        name: event.target.value,
-                      }))
+                      updateSetting("name", event.target.value)
                     }
                   />
                 </label>
@@ -623,11 +808,10 @@ function App() {
                   <select
                     value={settings.avatarSource}
                     onChange={(event) =>
-                      setSettings((currentSettings) => ({
-                        ...currentSettings,
-                        avatarSource:
-                          event.target.value as AvatarSource,
-                      }))
+                      updateSetting(
+                        "avatarSource",
+                        event.target.value as AvatarSource,
+                      )
                     }
                   >
                     <option value="initials">{t.initials}</option>
@@ -664,10 +848,10 @@ function App() {
                   <select
                     value={settings.language}
                     onChange={(event) =>
-                      setSettings((currentSettings) => ({
-                        ...currentSettings,
-                        language: event.target.value as Language,
-                      }))
+                      updateSetting(
+                        "language",
+                        event.target.value as Language,
+                      )
                     }
                   >
                     <option value="es">Español</option>
@@ -682,10 +866,7 @@ function App() {
                   <select
                     value={settings.theme}
                     onChange={(event) =>
-                      setSettings((currentSettings) => ({
-                        ...currentSettings,
-                        theme: event.target.value as Theme,
-                      }))
+                      updateSetting("theme", event.target.value as Theme)
                     }
                   >
                     <option value="auto">{t.automatic}</option>
@@ -693,6 +874,147 @@ function App() {
                     <option value="light">{t.light}</option>
                   </select>
                 </label>
+
+                <label>
+                  Escala de interfaz
+
+                  <input
+                    type="range"
+                    min="85"
+                    max="120"
+                    value={settings.uiScale}
+                    onChange={(event) =>
+                      updateSetting("uiScale", Number(event.target.value))
+                    }
+                  />
+                </label>
+
+                <label>
+                  Densidad
+
+                  <select
+                    value={settings.density}
+                    onChange={(event) =>
+                      updateSetting(
+                        "density",
+                        event.target.value as Settings["density"],
+                      )
+                    }
+                  >
+                    <option value="comfortable">Cómoda</option>
+                    <option value="compact">Compacta</option>
+                  </select>
+                </label>
+
+                <label>
+                  Transparencia
+
+                  <input
+                    type="range"
+                    min="55"
+                    max="95"
+                    value={settings.transparency}
+                    onChange={(event) =>
+                      updateSetting(
+                        "transparency",
+                        Number(event.target.value),
+                      )
+                    }
+                  />
+                </label>
+
+                <label className="check-field">
+                  <input
+                    type="checkbox"
+                    checked={settings.dynamicBackgrounds}
+                    onChange={(event) =>
+                      updateSetting(
+                        "dynamicBackgrounds",
+                        event.target.checked,
+                      )
+                    }
+                  />
+                  Fondos dinámicos
+                </label>
+              </section>
+
+              <section>
+                <h3>Juegos y pantalla</h3>
+
+                <label className="check-field">
+                  <input
+                    type="checkbox"
+                    checked={settings.startFullscreen}
+                    onChange={(event) =>
+                      updateSetting("startFullscreen", event.target.checked)
+                    }
+                  />
+                  Iniciar en pantalla completa
+                </label>
+
+                <label>
+                  Monitor preferido
+
+                  <input
+                    value={settings.preferredMonitor}
+                    onChange={(event) =>
+                      updateSetting("preferredMonitor", event.target.value)
+                    }
+                    placeholder="auto, HDMI-1, DP-1"
+                  />
+                </label>
+
+                <label>
+                  Steam ID
+
+                  <input
+                    value={settings.steamUserId}
+                    onChange={(event) =>
+                      updateSetting("steamUserId", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Reglas de detección
+
+                  <textarea
+                    value={settings.detectionRules}
+                    onChange={(event) =>
+                      updateSetting("detectionRules", event.target.value)
+                    }
+                    rows={6}
+                  />
+                </label>
+              </section>
+
+              <section>
+                <h3>Logros</h3>
+
+                <label>
+                  Tiempo por juego
+
+                  <select
+                    value={settings.achievementRotationSeconds}
+                    onChange={(event) =>
+                      updateSetting(
+                        "achievementRotationSeconds",
+                        Number(event.target.value) as Settings["achievementRotationSeconds"],
+                      )
+                    }
+                  >
+                    <option value={10}>10 segundos</option>
+                    <option value={20}>20 segundos</option>
+                    <option value={30}>30 segundos</option>
+                    <option value={60}>60 segundos</option>
+                  </select>
+                </label>
+
+                <p className="hint">
+                  El carrusel pausa la rotación al pasar el cursor o al abrir
+                  el detalle del juego.
+                </p>
               </section>
 
               <section>
@@ -704,35 +1026,289 @@ function App() {
                   <input
                     value={settings.weatherLocation}
                     onChange={(event) =>
-                      setSettings((currentSettings) => ({
-                        ...currentSettings,
-                        weatherLocation: event.target.value,
-                      }))
+                      updateSetting("weatherLocation", event.target.value)
                     }
                   />
+                </label>
+
+                <label>
+                  Proveedor
+
+                  <select
+                    value={settings.weatherProvider}
+                    onChange={(event) =>
+                      updateSetting(
+                        "weatherProvider",
+                        event.target.value as Settings["weatherProvider"],
+                      )
+                    }
+                  >
+                    <option value="open-meteo">Open-Meteo</option>
+                    <option value="openweathermap">OpenWeatherMap</option>
+                  </select>
+                </label>
+
+                <label>
+                  Animaciones meteorológicas
+
+                  <select
+                    value={settings.weatherMotion}
+                    onChange={(event) =>
+                      updateSetting(
+                        "weatherMotion",
+                        event.target.value as Settings["weatherMotion"],
+                      )
+                    }
+                  >
+                    <option value="full">Completas</option>
+                    <option value="reduced">Reducidas</option>
+                    <option value="off">Desactivadas</option>
+                  </select>
                 </label>
               </section>
 
               <section>
                 <h3>{t.integrations}</h3>
 
-                {[
-                  "Spotify Client ID",
-                  "RetroAchievements API key",
-                  "SteamGridDB API key",
-                  "OpenWeatherMap API key",
-                  "Gemini API key",
-                ].map((label) => (
-                  <label key={label}>
-                    {label}
+                <label>
+                  Spotify Client ID
 
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      placeholder={t.notConfigured}
-                    />
-                  </label>
-                ))}
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.spotifyClientId}
+                    onChange={(event) =>
+                      updateSetting("spotifyClientId", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Spotify access token temporal
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.spotifyAccessToken}
+                    onChange={(event) =>
+                      updateSetting("spotifyAccessToken", event.target.value)
+                    }
+                    placeholder="OAuth PKCE pendiente"
+                  />
+                </label>
+
+                <label>
+                  RetroAchievements usuario
+
+                  <input
+                    value={settings.retroAchievementsUser}
+                    onChange={(event) =>
+                      updateSetting(
+                        "retroAchievementsUser",
+                        event.target.value,
+                      )
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  RetroAchievements API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.retroAchievementsApiKey}
+                    onChange={(event) =>
+                      updateSetting(
+                        "retroAchievementsApiKey",
+                        event.target.value,
+                      )
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Steam Web API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.steamWebApiKey}
+                    onChange={(event) =>
+                      updateSetting("steamWebApiKey", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  SteamGridDB API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.steamGridDbApiKey}
+                    onChange={(event) =>
+                      updateSetting("steamGridDbApiKey", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  OpenWeatherMap API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.openWeatherMapApiKey}
+                    onChange={(event) =>
+                      updateSetting(
+                        "openWeatherMapApiKey",
+                        event.target.value,
+                      )
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Gemini API key
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.geminiApiKey}
+                    onChange={(event) =>
+                      updateSetting("geminiApiKey", event.target.value)
+                    }
+                    placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  Ollama URL
+
+                  <input
+                    value={settings.ollamaUrl}
+                    onChange={(event) =>
+                      updateSetting("ollamaUrl", event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  Ollama modelo
+
+                  <input
+                    value={settings.ollamaModel}
+                    onChange={(event) =>
+                      updateSetting("ollamaModel", event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  Discord
+
+                  <select
+                    value={settings.discordMode}
+                    onChange={(event) =>
+                      updateSetting(
+                        "discordMode",
+                        event.target.value as Settings["discordMode"],
+                      )
+                    }
+                  >
+                    <option value="disabled">Desactivado</option>
+                    <option value="rpc">RPC local</option>
+                    <option value="server">Servidor compartido</option>
+                  </select>
+                </label>
+
+                <label>
+                  Discord bot token
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.discordBotToken}
+                    onChange={(event) =>
+                      updateSetting("discordBotToken", event.target.value)
+                    }
+                    placeholder="Bot token oficial"
+                  />
+                </label>
+
+                <label>
+                  Discord guild ID
+
+                  <input
+                    value={settings.discordGuildId}
+                    onChange={(event) =>
+                      updateSetting("discordGuildId", event.target.value)
+                    }
+                    placeholder="Servidor de Discord"
+                  />
+                </label>
+              </section>
+
+              <section className="art-diagnostics">
+                <div className="art-diagnostics__heading">
+                  <div>
+                    <h3>Diagnóstico de arte</h3>
+                    <p className="hint">
+                      Prueba las APIs, la descarga nativa y el renderizado sin mostrar tus claves.
+                    </p>
+                  </div>
+                  <button
+                    className="diagnostic-action"
+                    type="button"
+                    disabled={artDiagnosticsRunning}
+                    onClick={diagnoseArt}
+                  >
+                    {artDiagnosticsRunning ? "Probando..." : "Ejecutar"}
+                  </button>
+                </div>
+
+                {artDiagnostics.length > 0 && (
+                  <div className="art-diagnostics__results">
+                    {artDiagnostics.map((step) => (
+                      <article
+                        className={`art-diagnostic art-diagnostic--${step.status}`}
+                        key={step.id}
+                      >
+                        {step.preview && <img src={step.preview} alt="" />}
+                        <div>
+                          <strong>{step.label}</strong>
+                          <p>{step.detail}</p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section>
+                <h3>Sistema y privacidad</h3>
+
+                <button
+                  className="danger-action"
+                  type="button"
+                  onClick={clearLocalSecrets}
+                >
+                  Borrar claves locales
+                </button>
+
+                <p className="hint">
+                  Las llamadas de Gemini y Discord pasan por Tauri. Las
+                  claves se conservan localmente durante desarrollo; el
+                  siguiente endurecimiento es guardarlas en el keyring del
+                  sistema.
+                </p>
               </section>
 
               <p className="privacy">{t.demoWarning}</p>
