@@ -545,9 +545,6 @@ async fn fetch_discord_presence(
         .json::<serde_json::Value>()
         .await
         .map_err(|error| error.to_string())?;
-    if data.response_status != Some(200) {
-        return Err("Los traductores externos no están disponibles temporalmente".into());
-    }
     let friends = data
         .as_array()
         .map(|members| members.iter())
@@ -1082,7 +1079,7 @@ async fn translate_text(request: TranslationRequest) -> Result<serde_json::Value
         .append_pair("langpair", &format!("{}|{}", request.source_language, request.target_language));
     let response = client
         .get(url)
-        .header("User-Agent", "Snext/0.2.0")
+        .header("User-Agent", "Snext/0.2.1")
         .send()
         .await
         .map_err(|error| error.to_string())?;
@@ -1093,6 +1090,9 @@ async fn translate_text(request: TranslationRequest) -> Result<serde_json::Value
         .json::<MyMemoryResponse>()
         .await
         .map_err(|error| error.to_string())?;
+    if data.response_status != Some(200) {
+        return Err("Los traductores externos no están disponibles temporalmente".into());
+    }
     let translated = data
         .response_data
         .and_then(|value| value.translated_text)

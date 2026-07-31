@@ -71,8 +71,8 @@ type Friend = {
   color: string;
 };
 
-const SNEXT_VERSION = "0.2.0";
-const SNEXT_BUILD = "ScreenScraper + traducción dual + reloj legible";
+const SNEXT_VERSION = "0.2.1";
+const SNEXT_BUILD = "Corrección de compilación + proveedores de arte";
 
 const defaultSettings: Settings = {
   name: "twittalien",
