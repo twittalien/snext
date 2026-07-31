@@ -149,7 +149,7 @@
   z-index: 3;
   display: flex;
   flex-direction: column;
-  width: min(58%, 43rem);
+  width: min(72%, 58rem);
   min-height: inherit;
   padding: clamp(
     var(--snext-space-5),
@@ -172,6 +172,12 @@
   align-items: center;
   gap: clamp(1rem, 2.5vw, 2rem);
   margin-top: auto;
+}
+
+.game-hero__cover--image {
+  position: relative;
+  z-index: 1;
+  transform: rotate(-2deg);
 }
 
 .game-hero__identity {
@@ -402,7 +408,7 @@
 
 @media (max-width: 960px) {
   .game-hero__content {
-    width: min(68%, 40rem);
+    width: min(76%, 48rem);
   }
 
   .game-hero__wash {

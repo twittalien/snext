@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path, process::Command, thread, time::Duration};
+use tauri::{Manager, PhysicalPosition, PhysicalSize};
 use sysinfo::{ProcessesToUpdate, System};
 
 #[derive(Serialize)]
@@ -92,6 +93,23 @@ struct RemoteImageRequest {
 #[derive(Serialize)]
 struct RemoteImageResponse {
     data_url: String,
+}
+
+#[derive(Deserialize)]
+struct TranslationRequest {
+    text: String,
+    source_language: String,
+    target_language: String,
+}
+
+#[derive(Deserialize)]
+struct MyMemoryResponse {
+    response_data: Option<MyMemoryResponseData>,
+}
+
+#[derive(Deserialize)]
+struct MyMemoryResponseData {
+    translated_text: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -661,6 +679,58 @@ async fn steam_grid_json(
         .map_err(|error| error.to_string())
 }
 
+fn normalized_game_title(title: &str) -> String {
+    title
+        .to_ascii_lowercase()
+        .replace(&['’', '\'', '+', '&'][..], " ")
+        .chars()
+        .map(|character| if character.is_ascii_alphanumeric() { character } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn steam_grid_title_candidates(title: &str) -> Vec<String> {
+    let without_metadata = title
+        .split('(')
+        .next()
+        .unwrap_or(title)
+        .split('[')
+        .next()
+        .unwrap_or(title)
+        .trim();
+    let normalized = normalized_game_title(without_metadata);
+    let mut candidates = vec![
+        title.to_string(),
+        without_metadata.to_string(),
+        without_metadata.replace("Bowsers Fury", "Bowser's Fury"),
+        without_metadata.replace("Bowser's Fury", "+ Bowser's Fury"),
+        normalized.clone(),
+    ];
+    if normalized.starts_with("super mario 3d world") {
+        candidates.push("Super Mario 3D World + Bowser's Fury".into());
+        candidates.push("Super Mario 3D World".into());
+    }
+    candidates.sort();
+    candidates.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    candidates
+}
+
+async fn public_steam_grid_game_id(
+    client: &reqwest::Client,
+    candidate: &str,
+) -> Option<(u64, String)> {
+    let mut url = reqwest::Url::parse("https://www.steamgriddb.com/search/games").ok()?;
+    url.query_pairs_mut().append_pair("term", candidate);
+    let html = client.get(url).send().await.ok()?.text().await.ok()?;
+    let marker = "/game/";
+    let start = html.find(marker)? + marker.len();
+    let id_text = html[start..].split(|character: char| !character.is_ascii_digit()).next()?;
+    let id = id_text.parse().ok()?;
+    Some((id, candidate.to_string()))
+}
+
 fn steam_grid_url(path: &[&str]) -> Result<reqwest::Url, String> {
     let mut url = reqwest::Url::parse("https://www.steamgriddb.com/api/v2/")
         .map_err(|error| error.to_string())?;
@@ -693,49 +763,55 @@ async fn fetch_steam_grid_art(
         .user_agent("Snext/0.1 SteamGridDB integration")
         .build()
         .map_err(|error| error.to_string())?;
-    let normalized_title = title
-        .split('(')
-        .next()
-        .unwrap_or(title)
-        .split('[')
-        .next()
-        .unwrap_or(title)
-        .trim();
-    let candidates = if normalized_title.eq_ignore_ascii_case(title) {
-        vec![title]
-    } else {
-        vec![title, normalized_title]
-    };
-
     let mut game_id = None;
     let mut matched_title = title.to_string();
-    for candidate in candidates {
-        let search = steam_grid_json(
+    for candidate in steam_grid_title_candidates(title) {
+        let search = match steam_grid_json(
             &client,
-            steam_grid_url(&["search", "autocomplete", candidate])?,
+            steam_grid_url(&["search", "autocomplete", &candidate])?,
             api_key,
         )
-        .await?;
+        .await {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
         if let Some(matches) = search.get("data").and_then(serde_json::Value::as_array) {
             let selected = matches
                 .iter()
-                .find(|item| {
-                    item.get("name")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|name| name.eq_ignore_ascii_case(candidate))
+                .filter_map(|item| {
+                    let name = item.get("name")?.as_str()?;
+                    let id = item.get("id")?.as_u64()?;
+                    Some((id, name))
                 })
-                .or_else(|| matches.first());
-            if let Some(selected) = selected {
-                game_id = selected.get("id").and_then(serde_json::Value::as_u64);
-                matched_title = selected
-                    .get("name")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or(candidate)
-                    .to_string();
+                .min_by_key(|(_, name)| {
+                    let left = normalized_game_title(name);
+                    let right = normalized_game_title(&candidate);
+                    if left == right { 0 } else if left.contains(right.as_str()) || right.contains(left.as_str()) { 1 } else { 2 }
+                })
+                .map(|(id, name)| (id, name.to_string()));
+            if let Some((id, name)) = selected {
+                game_id = Some(id);
+                matched_title = name;
+            }
+        }
+        if game_id.is_none() {
+            if let Some((id, name)) = public_steam_grid_game_id(&client, &candidate).await {
+                game_id = Some(id);
+                matched_title = name;
             }
         }
         if game_id.is_some() {
             break;
+        }
+    }
+
+    if game_id.is_none() {
+        for candidate in steam_grid_title_candidates(title) {
+            if let Some((id, name)) = public_steam_grid_game_id(&client, &candidate).await {
+                game_id = Some(id);
+                matched_title = name;
+                break;
+            }
         }
     }
 
@@ -776,6 +852,38 @@ async fn fetch_steam_grid_art(
         logo,
         matched_title,
     })
+}
+
+#[tauri::command]
+async fn translate_text(request: TranslationRequest) -> Result<serde_json::Value, String> {
+    if request.target_language == request.source_language || request.text.trim().is_empty() {
+        return Ok(serde_json::json!({ "translated_text": request.text }));
+    }
+
+    let mut url = reqwest::Url::parse("https://api.mymemory.translated.net/get")
+        .map_err(|error| error.to_string())?;
+    url.query_pairs_mut()
+        .append_pair("q", &request.text)
+        .append_pair("langpair", &format!("{}|{}", request.source_language, request.target_language));
+    let response = reqwest::Client::new()
+        .get(url)
+        .header("User-Agent", "Snext/0.1.8")
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("El traductor respondió {}", response.status()));
+    }
+    let data = response
+        .json::<MyMemoryResponse>()
+        .await
+        .map_err(|error| error.to_string())?;
+    let translated = data
+        .response_data
+        .and_then(|value| value.translated_text)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(request.text);
+    Ok(serde_json::json!({ "translated_text": translated }))
 }
 
 #[tauri::command]
@@ -983,6 +1091,23 @@ fn detect_active_game() -> ActiveGame {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let window = app.get_webview_window("main").ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, "No se encontró la ventana principal")
+            })?;
+            let monitors = app.available_monitors()?;
+            let monitor = monitors.get(1).or_else(|| monitors.first());
+            window.set_decorations(false)?;
+            window.set_always_on_top(false)?;
+            if let Some(monitor) = monitor {
+                let position = monitor.position();
+                let size = monitor.size();
+                window.set_position(PhysicalPosition::new(position.x, position.y))?;
+                window.set_size(PhysicalSize::new(size.width, size.height))?;
+            }
+            window.set_fullscreen(true)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_system_snapshot,
             get_hardware_snapshot,
@@ -991,7 +1116,8 @@ pub fn run() {
             fetch_retro_achievements,
             fetch_steam_grid_art,
             fetch_remote_image,
-            detect_active_game
+            detect_active_game,
+            translate_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

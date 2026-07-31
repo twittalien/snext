@@ -66,8 +66,8 @@ type Friend = {
   color: string;
 };
 
-const SNEXT_VERSION = "0.1.7";
-const SNEXT_BUILD = "Arte nativo + diagnóstico";
+const SNEXT_VERSION = "0.1.8";
+const SNEXT_BUILD = "Arte aproximado + traducción + pantalla completa";
 
 const defaultSettings: Settings = {
   name: "twittalien",
@@ -81,7 +81,7 @@ const defaultSettings: Settings = {
   density: "comfortable",
   transparency: 78,
   dynamicBackgrounds: true,
-  startFullscreen: false,
+  startFullscreen: true,
   preferredMonitor: "auto",
   detectionRules: "retroarch\nryujinx\ncitra\nsteam\nheroic\nlutris",
   steamUserId: "",
@@ -254,7 +254,8 @@ function App() {
         setDataLoading(true);
       }
 
-      const data = await loadDashboardData(settings.weatherLocation, locale, {
+    const data = await loadDashboardData(settings.weatherLocation, locale, {
+      language: settings.language,
       weatherProvider: settings.weatherProvider,
       openWeatherMapApiKey: settings.openWeatherMapApiKey,
       steamGridDbApiKey: settings.steamGridDbApiKey,

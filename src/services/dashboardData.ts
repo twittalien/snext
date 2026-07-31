@@ -41,6 +41,7 @@ export type DashboardData = {
 };
 
 export type DashboardDataOptions = {
+  language: "es" | "en" | "pt";
   weatherProvider: "open-meteo" | "openweathermap";
   openWeatherMapApiKey: string;
   steamGridDbApiKey: string;
@@ -112,6 +113,10 @@ type SteamGridArtResponse = {
   matched_title: string;
 };
 
+type TranslationResponse = {
+  translated_text: string;
+};
+
 type RetroAchievementsRecentGame = {
   ID?: number;
   GameID?: number;
@@ -151,6 +156,25 @@ function retroAchievementsMediaUrl(path?: string, folder = "Images") {
     return `https://media.retroachievements.org/${normalized}`;
   }
   return `https://media.retroachievements.org/${folder}/${normalized}`;
+}
+
+async function translateAchievementDescription(
+  description: string,
+  language: DashboardDataOptions["language"],
+): Promise<string> {
+  if (language === "en" || !description.trim()) return description;
+
+  try {
+    return await invoke<TranslationResponse>("translate_text", {
+      request: {
+        text: description,
+        source_language: "en",
+        target_language: language,
+      },
+    }).then((response) => response.translated_text || description);
+  } catch {
+    return description;
+  }
 }
 
 type SpotifyPlaybackResponse = {
@@ -784,7 +808,8 @@ async function loadRetroAchievements(
       source: "retroachievements",
       unlocked: index === 0,
     }));
-    const achievementGames: AchievementGame[] = games.slice(0, 8).map((game, index) => {
+    const achievementGames: AchievementGame[] = await Promise.all(
+      games.slice(0, 8).map(async (game, index) => {
       const detailsData = game;
       const apiAchievements = Object.values(detailsData?.Achievements ?? {});
       const total = Math.max(
@@ -792,20 +817,25 @@ async function loadRetroAchievements(
         game.NumPossibleAchievements ?? detailsData?.NumPossibleAchievements ?? apiAchievements.length ?? 30,
       );
       const unlocked = Math.max(0, game.NumAchieved ?? detailsData?.NumAchieved ?? apiAchievements.filter((item) => item.DateEarned).length);
-      const mappedDetails: AchievementDetail[] = apiAchievements.slice(0, 40).map((item, detailIndex) => ({
-        id: String(item.ID ?? `${game.Title ?? "ra"}-${detailIndex}`),
-        name: item.Title ?? `Logro ${detailIndex + 1}`,
-        description: item.Description ?? "Sin descripción disponible.",
-        unlocked: Boolean(item.DateEarned),
-        hidden: Boolean(item.Flags && item.Flags > 0),
-        points: item.Points ?? 0,
-        rarityPercent: item.TrueRatio,
-        hardcore: Boolean(item.DateEarnedHardcore),
-        unlockedAt: item.DateEarned ?? undefined,
-        image: item.BadgeName
-          ? retroAchievementsMediaUrl(`${item.BadgeName}.png`, "Badge")
-          : undefined,
-      }));
+      const mappedDetails: AchievementDetail[] = await Promise.all(
+        apiAchievements.slice(0, 40).map(async (item, detailIndex) => ({
+          id: String(item.ID ?? `${game.Title ?? "ra"}-${detailIndex}`),
+          name: item.Title ?? `Logro ${detailIndex + 1}`,
+          description: await translateAchievementDescription(
+            item.Description ?? "Sin descripción disponible.",
+            options.language,
+          ),
+          unlocked: Boolean(item.DateEarned),
+          hidden: Boolean(item.Flags && item.Flags > 0),
+          points: item.Points ?? 0,
+          rarityPercent: item.TrueRatio,
+          hardcore: Boolean(item.DateEarnedHardcore),
+          unlockedAt: item.DateEarned ?? undefined,
+          image: item.BadgeName
+            ? retroAchievementsMediaUrl(`${item.BadgeName}.png`, "Badge")
+            : undefined,
+        })),
+      );
       const details: AchievementDetail[] = mappedDetails.length > 0
         ? mappedDetails
         : [{
@@ -829,7 +859,8 @@ async function loadRetroAchievements(
         recentAchievement: details.find((detail) => detail.unlocked) ?? details[0],
         achievements: details,
       };
-    });
+      }),
+    );
 
     return {
       items,
