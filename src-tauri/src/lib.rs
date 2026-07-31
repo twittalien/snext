@@ -92,6 +92,7 @@ struct SteamGridArtResponse {
     hero_image: Option<String>,
     cover_image: Option<String>,
     logo: Option<String>,
+    description: Option<String>,
     matched_title: String,
     source: Option<String>,
 }
@@ -671,6 +672,14 @@ fn first_asset_url(data: &serde_json::Value) -> Option<String> {
         .find_map(|asset| asset.get("url")?.as_str().map(str::to_string))
 }
 
+fn json_string_value(value: Option<&serde_json::Value>) -> Option<String> {
+    value
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
 async fn steam_grid_json(
     client: &reqwest::Client,
     url: reqwest::Url,
@@ -888,6 +897,15 @@ fn steam_grid_url(path: &[&str]) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
+fn steam_grid_asset_url(path: &[&str], dimensions: &[&str]) -> Result<reqwest::Url, String> {
+    let mut url = steam_grid_url(path)?;
+    if !dimensions.is_empty() {
+        url.query_pairs_mut()
+            .append_pair("dimensions", &dimensions.join(","));
+    }
+    Ok(url)
+}
+
 #[tauri::command]
 async fn fetch_steam_grid_art(
     request: SteamGridRequest,
@@ -965,16 +983,30 @@ async fn fetch_steam_grid_art(
 
     let game_id = game_id.ok_or_else(|| format!("SteamGridDB no encontró {title}"))?;
     let id = game_id.to_string();
-    let heroes = steam_grid_json(
+    let game_details = steam_grid_json(
         &client,
-        steam_grid_url(&["heroes", "game", &id])?,
+        steam_grid_url(&["games", "id", &id])?,
         api_key,
     )
     .await
     .ok();
-    let grids = steam_grid_json(
+    let heroes = steam_grid_json(
         &client,
-        steam_grid_url(&["grids", "game", &id])?,
+        steam_grid_asset_url(&["heroes", "game", &id], &["1920x620", "3840x1240"])?,
+        api_key,
+    )
+    .await
+    .ok();
+    let landscape_grids = steam_grid_json(
+        &client,
+        steam_grid_asset_url(&["grids", "game", &id], &["920x430", "1920x620"])?,
+        api_key,
+    )
+    .await
+    .ok();
+    let poster_grids = steam_grid_json(
+        &client,
+        steam_grid_asset_url(&["grids", "game", &id], &["600x900", "342x482"])?,
         api_key,
     )
     .await
@@ -987,9 +1019,23 @@ async fn fetch_steam_grid_art(
     .await
     .ok();
 
-    let hero_image = heroes.as_ref().and_then(first_asset_url);
-    let mut cover_image = grids.as_ref().and_then(first_asset_url);
+    let mut hero_image = heroes
+        .as_ref()
+        .and_then(first_asset_url)
+        .or_else(|| landscape_grids.as_ref().and_then(first_asset_url));
+    let mut cover_image = poster_grids.as_ref().and_then(first_asset_url);
     let logo = logos.as_ref().and_then(first_asset_url);
+    let description = game_details
+        .as_ref()
+        .and_then(|value| value.get("data"))
+        .and_then(|data| {
+            json_string_value(data.get("description"))
+                .or_else(|| json_string_value(data.get("summary")))
+                .or_else(|| json_string_value(data.get("overview")))
+        });
+    if hero_image.is_none() {
+        hero_image = known_steam_grid_public_cover(title).map(str::to_string);
+    }
     if cover_image.is_none() {
         cover_image = known_steam_grid_public_cover(title).map(str::to_string);
     }
@@ -1001,6 +1047,7 @@ async fn fetch_steam_grid_art(
         hero_image,
         cover_image,
         logo,
+        description,
         matched_title,
         source: Some("SteamGridDB".into()),
     })
@@ -1067,6 +1114,7 @@ async fn fetch_screen_scraper_art(
         hero_image,
         cover_image,
         logo,
+        description: json_string_for_keys(&data, &["descripcion", "description", "synopsis", "synopsis_en"]),
         matched_title,
         source: Some("ScreenScraper".into()),
     })

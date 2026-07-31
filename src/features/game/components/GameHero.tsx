@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import {
   Badge,
   Card,
@@ -97,27 +96,6 @@ export function GameHero({
           <span>×</span>
           <span>○</span>
           <span>□</span>
-        </div>
-
-        <div className="game-hero__platform-stack" aria-hidden="true">
-          {[platformInfo, getPlatformInfo("steam"), getPlatformInfo("retroarch")]
-            .filter(
-              (info, index, list) =>
-                list.findIndex((item) => item.key === info.key) === index,
-            )
-            .slice(0, 3)
-            .map((info, index) => (
-              <span
-                key={info.key}
-                style={{
-                  "--platform-color": info.color,
-                  "--platform-bg": info.background,
-                  "--stack-index": index,
-                } as CSSProperties}
-              >
-                <b>{info.glyph}</b>
-              </span>
-            ))}
         </div>
 
         <div className="game-hero__content">

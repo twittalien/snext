@@ -114,6 +114,7 @@ type SteamGridArtResponse = {
   hero_image?: string;
   cover_image?: string;
   logo?: string;
+  description?: string;
   matched_title: string;
   source?: string;
 };
@@ -752,6 +753,11 @@ async function loadSteamGridDbArt(
     heroImage: art.hero_image ?? game.heroImage,
     coverImage: art.cover_image ?? game.coverImage,
     logo: art.logo,
+    description:
+      art.description ??
+      (art.hero_image || art.cover_image || art.logo
+        ? `Jugando ${art.matched_title} en ${game.platform}.`
+        : game.description),
     ratingLabel: `Arte por ${art.source ?? "SteamGridDB"} · ${art.matched_title}`,
   };
 }
@@ -784,6 +790,7 @@ async function loadScreenScraperArt(
     heroImage: art.hero_image ?? game.heroImage,
     coverImage: art.cover_image ?? game.coverImage,
     logo: art.logo ?? game.logo,
+    description: art.description ?? game.description,
     ratingLabel: `Arte por ScreenScraper · ${art.matched_title}`,
   };
 }

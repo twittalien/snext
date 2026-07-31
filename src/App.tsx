@@ -46,6 +46,7 @@ type Settings = {
   steamUserId: string;
   spotifyClientId: string;
   spotifyAccessToken: string;
+  spotifyTokenExpiresAt: number;
   retroAchievementsApiKey: string;
   steamWebApiKey: string;
   steamGridDbApiKey: string;
@@ -71,8 +72,13 @@ type Friend = {
   color: string;
 };
 
-const SNEXT_VERSION = "0.2.3";
-const SNEXT_BUILD = "CDN de arte + reloj transparente";
+const SNEXT_VERSION = "0.2.4";
+const SNEXT_BUILD = "SteamGridDB completo + Spotify PKCE";
+const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:1420/callback";
+const SPOTIFY_SCOPES = [
+  "user-read-currently-playing",
+  "user-read-playback-state",
+].join(" ");
 
 const defaultSettings: Settings = {
   name: "twittalien",
@@ -92,6 +98,7 @@ const defaultSettings: Settings = {
   steamUserId: "",
   spotifyClientId: "",
   spotifyAccessToken: "",
+  spotifyTokenExpiresAt: 0,
   retroAchievementsApiKey: "",
   steamWebApiKey: "",
   steamGridDbApiKey: "",
@@ -110,6 +117,26 @@ const defaultSettings: Settings = {
   discordGuildId: "",
   achievementRotationSeconds: 30,
 };
+
+function base64UrlEncode(buffer: ArrayBuffer) {
+  return window
+    .btoa(String.fromCharCode(...new Uint8Array(buffer)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function createCodeVerifier() {
+  const bytes = new Uint8Array(64);
+  window.crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes.buffer);
+}
+
+async function createCodeChallenge(verifier: string) {
+  const data = new TextEncoder().encode(verifier);
+  const digest = await window.crypto.subtle.digest("SHA-256", data);
+  return base64UrlEncode(digest);
+}
 
 const friends: Friend[] = [
   {
@@ -249,6 +276,79 @@ function App() {
       settings.dynamicBackgrounds,
     );
   }, [settings]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    const error = url.searchParams.get("error");
+
+    if (error) {
+      window.history.replaceState({}, document.title, "/");
+      window.alert(`Spotify no pudo autorizar Snext: ${error}`);
+      return;
+    }
+
+    if (!code) {
+      return;
+    }
+
+    const verifier = localStorage.getItem("snext-spotify-code-verifier");
+    const expectedState = localStorage.getItem("snext-spotify-oauth-state");
+    if (!verifier || !expectedState || state !== expectedState) {
+      window.history.replaceState({}, document.title, "/");
+      window.alert("La respuesta de Spotify no coincide con esta sesión de Snext.");
+      return;
+    }
+
+    const exchangeCode = async () => {
+      const body = new URLSearchParams({
+        client_id: settings.spotifyClientId.trim(),
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: SPOTIFY_REDIRECT_URI,
+        code_verifier: verifier,
+      });
+
+      const response = await fetch("https://accounts.spotify.com/api/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Spotify respondió ${response.status}`);
+      }
+
+      const tokenData = (await response.json()) as {
+        access_token?: string;
+        expires_in?: number;
+      };
+
+      if (!tokenData.access_token) {
+        throw new Error("Spotify no devolvió access_token.");
+      }
+
+      localStorage.removeItem("snext-spotify-code-verifier");
+      localStorage.removeItem("snext-spotify-oauth-state");
+      setSettings((currentSettings) => ({
+        ...currentSettings,
+        spotifyAccessToken: tokenData.access_token ?? "",
+        spotifyTokenExpiresAt:
+          Date.now() + Math.max(30, tokenData.expires_in ?? 3600) * 1000,
+      }));
+      window.history.replaceState({}, document.title, "/");
+    };
+
+    exchangeCode().catch((exchangeError) => {
+      window.history.replaceState({}, document.title, "/");
+      window.alert(
+        `No se pudo conectar Spotify. ${exchangeError instanceof Error ? exchangeError.message : String(exchangeError)}`,
+      );
+    });
+  }, [settings.spotifyClientId]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -438,12 +538,48 @@ function App() {
       ...currentSettings,
       spotifyClientId: "",
       spotifyAccessToken: "",
+      spotifyTokenExpiresAt: 0,
       retroAchievementsApiKey: "",
       steamWebApiKey: "",
       steamGridDbApiKey: "",
       openWeatherMapApiKey: "",
       geminiApiKey: "",
       discordBotToken: "",
+    }));
+  };
+
+  const connectSpotify = async () => {
+    const clientId = settings.spotifyClientId.trim();
+    if (!clientId) {
+      window.alert("Primero pega tu Spotify Client ID.");
+      return;
+    }
+
+    const verifier = createCodeVerifier();
+    const challenge = await createCodeChallenge(verifier);
+    const state = createCodeVerifier().slice(0, 32);
+    localStorage.setItem("snext-spotify-code-verifier", verifier);
+    localStorage.setItem("snext-spotify-oauth-state", state);
+
+    const url = new URL("https://accounts.spotify.com/authorize");
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("redirect_uri", SPOTIFY_REDIRECT_URI);
+    url.searchParams.set("scope", SPOTIFY_SCOPES);
+    url.searchParams.set("code_challenge_method", "S256");
+    url.searchParams.set("code_challenge", challenge);
+    url.searchParams.set("state", state);
+
+    window.location.assign(url.toString());
+  };
+
+  const disconnectSpotify = () => {
+    localStorage.removeItem("snext-spotify-code-verifier");
+    localStorage.removeItem("snext-spotify-oauth-state");
+    setSettings((currentSettings) => ({
+      ...currentSettings,
+      spotifyAccessToken: "",
+      spotifyTokenExpiresAt: 0,
     }));
   };
 
@@ -857,7 +993,7 @@ function App() {
                 <details>
                   <summary>Spotify</summary>
                   <p>
-                    Crea una aplicación en Spotify for Developers, usa el Client ID y genera un access token OAuth con los permisos <code>user-read-currently-playing</code> y <code>user-read-playback-state</code>. Pega el token temporal en el campo correspondiente; cuando expire, genera uno nuevo.
+                    Crea una aplicación en Spotify for Developers, agrega <code>{SPOTIFY_REDIRECT_URI}</code> como Redirect URI y pega el Client ID. Después presiona Conectar Spotify; Snext usará OAuth PKCE con permisos <code>user-read-currently-playing</code> y <code>user-read-playback-state</code>. No necesitas Client Secret para esta app local.
                   </p>
                 </details>
 
@@ -1175,7 +1311,6 @@ function App() {
                   Spotify Client ID
 
                   <input
-                    type="password"
                     autoComplete="off"
                     value={settings.spotifyClientId}
                     onChange={(event) =>
@@ -1185,19 +1320,20 @@ function App() {
                   />
                 </label>
 
-                <label>
-                  Spotify access token temporal
-
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={settings.spotifyAccessToken}
-                    onChange={(event) =>
-                      updateSetting("spotifyAccessToken", event.target.value)
-                    }
-                    placeholder="OAuth PKCE pendiente"
-                  />
-                </label>
+                <div className="integration-actions">
+                  <button type="button" onClick={connectSpotify}>
+                    Conectar Spotify
+                  </button>
+                  <button type="button" onClick={disconnectSpotify}>
+                    Desconectar
+                  </button>
+                </div>
+                <p className="hint">
+                  Redirect URI para Spotify: <code>{SPOTIFY_REDIRECT_URI}</code>
+                  {settings.spotifyAccessToken
+                    ? ` · Conectado hasta ${new Date(settings.spotifyTokenExpiresAt || Date.now()).toLocaleTimeString(locale)}`
+                    : " · Spotify pendiente de conexión"}
+                </p>
 
                 <label>
                   RetroAchievements usuario
