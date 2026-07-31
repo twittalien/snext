@@ -49,6 +49,7 @@ export type DashboardDataOptions = {
   screenScraperDevPassword: string;
   screenScraperUser: string;
   screenScraperPassword: string;
+  steamGridDbGameOverrides: Record<string, number>;
   retroAchievementsUser: string;
   retroAchievementsApiKey: string;
   spotifyAccessToken: string;
@@ -119,11 +120,40 @@ type SteamGridArtResponse = {
   source?: string;
 };
 
+export type SteamGridSearchResult = {
+  id: number;
+  name: string;
+  release_date?: string;
+  types: string[];
+};
+
 type TranslationResponse = {
   translated_text: string;
 };
 
 const translationCache = new Map<string, Promise<string>>();
+
+export function normalizeGameTitleKey(title: string) {
+  return title
+    .toLowerCase()
+    .replace(/['’+&]/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export async function searchSteamGridDbGames(
+  title: string,
+  apiKey: string,
+): Promise<SteamGridSearchResult[]> {
+  if (!title.trim() || !apiKey.trim()) return [];
+  return invoke<SteamGridSearchResult[]>("search_steam_grid_games", {
+    request: {
+      title,
+      api_key: apiKey,
+    },
+  });
+}
 
 type RetroAchievementsRecentGame = {
   ID?: number;
@@ -737,6 +767,8 @@ async function loadActiveGame(): Promise<GameHeroData> {
 async function loadSteamGridDbArt(
   game: GameHeroData,
   apiKey: string,
+  selectedGameId: number | undefined,
+  language: DashboardDataOptions["language"],
 ): Promise<Partial<GameHeroData>> {
   if (!apiKey.trim() || game.title === fallbackGame.title) {
     return {};
@@ -746,6 +778,8 @@ async function loadSteamGridDbArt(
     request: {
       title: game.title,
       api_key: apiKey,
+      selected_game_id: selectedGameId,
+      language,
     },
   });
 
@@ -800,7 +834,14 @@ async function enrichGameWithProviders(
   options: DashboardDataOptions,
 ): Promise<GameHeroData> {
   try {
-    const art = await loadSteamGridDbArt(game, options.steamGridDbApiKey);
+    const selectedGameId =
+      options.steamGridDbGameOverrides[normalizeGameTitleKey(game.title)];
+    const art = await loadSteamGridDbArt(
+      game,
+      options.steamGridDbApiKey,
+      selectedGameId,
+      options.language,
+    );
     return { ...game, ...art };
   } catch (steamGridError) {
     console.error("SteamGridDB art failed", steamGridError);

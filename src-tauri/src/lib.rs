@@ -7,7 +7,7 @@ use std::{
     path::Path,
     process::Command,
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use sysinfo::{ProcessesToUpdate, System};
 
@@ -82,6 +82,22 @@ struct RetroAchievementsRequest {
 struct SteamGridRequest {
     title: String,
     api_key: String,
+    selected_game_id: Option<u64>,
+    language: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SteamGridSearchRequest {
+    title: String,
+    api_key: String,
+}
+
+#[derive(Serialize, Clone)]
+struct SteamGridSearchResult {
+    id: u64,
+    name: String,
+    release_date: Option<String>,
+    types: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -829,9 +845,16 @@ fn steam_grid_title_candidates(title: &str) -> Vec<String> {
         .unwrap_or(title)
         .trim();
     let normalized = normalized_game_title(without_metadata);
+    let corrected = without_metadata
+        .replace("Knigth", "Knight")
+        .replace("knigth", "knight")
+        .replace("Odissey", "Odyssey")
+        .replace("odissey", "odyssey")
+        .replace("Bros Wonder", "Bros. Wonder");
     let mut candidates = vec![
         title.to_string(),
         without_metadata.to_string(),
+        corrected,
         without_metadata.replace("Bowsers Fury", "Bowser's Fury"),
         without_metadata.replace("Bowser's Fury", "+ Bowser's Fury"),
         normalized.clone(),
@@ -856,6 +879,9 @@ fn steam_grid_title_candidates(title: &str) -> Vec<String> {
         candidates.push("Super Mario 3D World + Bowser's Fury".into());
         candidates.push("Super Mario 3D World".into());
     }
+    if normalized.contains("hollow knigth") {
+        candidates.push("Hollow Knight".into());
+    }
     candidates.sort();
     candidates.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
     candidates
@@ -868,6 +894,7 @@ fn known_steam_grid_game(title: &str) -> Option<(u64, &'static str)> {
         "super mario 3d world bowsers fury" => {
             Some((5266526, "Super Mario 3D World + Bowser's Fury"))
         }
+        "hollow knight" | "hollow knigth" => Some((7545, "Hollow Knight")),
         _ => None,
     }
 }
@@ -924,6 +951,155 @@ fn steam_grid_asset_url(path: &[&str], dimensions: &[&str]) -> Result<reqwest::U
     Ok(url)
 }
 
+async fn steam_grid_search_results(
+    client: &reqwest::Client,
+    api_key: &str,
+    title: &str,
+) -> Vec<SteamGridSearchResult> {
+    let mut results: Vec<SteamGridSearchResult> = Vec::new();
+    for candidate in steam_grid_title_candidates(title) {
+        let search = match steam_grid_json(
+            client,
+            match steam_grid_url(&["search", "autocomplete", &candidate]) {
+                Ok(url) => url,
+                Err(_) => continue,
+            },
+            api_key,
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+
+        if let Some(matches) = search.get("data").and_then(serde_json::Value::as_array) {
+            for item in matches {
+                let Some(name) = item.get("name").and_then(serde_json::Value::as_str) else {
+                    continue;
+                };
+                let Some(id) = json_u64(item.get("id")) else {
+                    continue;
+                };
+                if results.iter().any(|result| result.id == id) {
+                    continue;
+                }
+                let release_date = json_string_value(item.get("release_date"))
+                    .or_else(|| json_string_value(item.get("releaseDate")));
+                let types = item
+                    .get("types")
+                    .and_then(serde_json::Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                results.push(SteamGridSearchResult {
+                    id,
+                    name: name.to_string(),
+                    release_date,
+                    types,
+                });
+            }
+        }
+    }
+
+    if let Some((id, name)) = known_steam_grid_game(title) {
+        if !results.iter().any(|result| result.id == id) {
+            results.push(SteamGridSearchResult {
+                id,
+                name: name.to_string(),
+                release_date: None,
+                types: Vec::new(),
+            });
+        }
+    }
+
+    results.sort_by_key(|result| steam_grid_match_score(title, &result.name));
+    results.truncate(8);
+    results
+}
+
+fn extract_steam_grid_cdn_url(html: &str) -> Option<String> {
+    for marker in ["https:\\/\\/cdn", "https://cdn"] {
+        let Some(start) = html.find(marker) else {
+            continue;
+        };
+        let tail = &html[start..];
+        let raw = tail
+            .split(|character| matches!(character, '"' | '\'' | '<' | '>' | ')' | ' '))
+            .next()
+            .unwrap_or_default()
+            .replace("\\/", "/")
+            .replace("\\u0026", "&");
+        if raw.contains("steamgriddb.com") {
+            return Some(raw);
+        }
+    }
+    None
+}
+
+async fn public_steam_grid_asset(
+    client: &reqwest::Client,
+    game_id: u64,
+    section: &str,
+) -> Option<String> {
+    let url = format!("https://www.steamgriddb.com/game/{game_id}/{section}");
+    let html = client.get(url).send().await.ok()?.text().await.ok()?;
+    extract_steam_grid_cdn_url(&html)
+}
+
+async fn wikipedia_description(
+    client: &reqwest::Client,
+    title: &str,
+    language: &str,
+) -> Option<String> {
+    let host_language = match language {
+        "en" => "en",
+        "pt" => "pt",
+        _ => "es",
+    };
+    let mut url = reqwest::Url::parse(&format!(
+        "https://{host_language}.wikipedia.org/api/rest_v1/page/summary/"
+    ))
+    .ok()?;
+    url.path_segments_mut().ok()?.push(title);
+    let data = client
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .ok()?
+        .json::<serde_json::Value>()
+        .await
+        .ok()?;
+    json_string_value(data.get("extract"))
+}
+
+#[tauri::command]
+async fn search_steam_grid_games(
+    request: SteamGridSearchRequest,
+) -> Result<Vec<SteamGridSearchResult>, String> {
+    let api_key = request
+        .api_key
+        .trim()
+        .strip_prefix("Bearer ")
+        .unwrap_or(request.api_key.trim());
+    let title = request.title.trim();
+    if api_key.is_empty() || title.is_empty() {
+        return Err("Faltan el título o la API key de SteamGridDB".into());
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("Snext/0.3 SteamGridDB search")
+        .build()
+        .map_err(|error| error.to_string())?;
+
+    Ok(steam_grid_search_results(&client, api_key, title).await)
+}
+
 #[tauri::command]
 async fn fetch_steam_grid_art(
     request: SteamGridRequest,
@@ -939,67 +1115,35 @@ async fn fetch_steam_grid_art(
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("Snext/0.1 SteamGridDB integration")
+        .user_agent("Snext/0.3 SteamGridDB integration")
         .build()
         .map_err(|error| error.to_string())?;
-    let mut game_id = None;
     let mut matched_title = title.to_string();
-    for candidate in steam_grid_title_candidates(title) {
-        let search = match steam_grid_json(
-            &client,
-            steam_grid_url(&["search", "autocomplete", &candidate])?,
-            api_key,
-        )
-        .await {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        if let Some(matches) = search.get("data").and_then(serde_json::Value::as_array) {
-            let selected = matches
-                .iter()
-                .filter_map(|item| {
-                    let name = item.get("name")?.as_str()?;
-                    let id = json_u64(item.get("id"))?;
-                    Some((id, name))
-                })
-                .min_by_key(|(_, name)| {
-                    steam_grid_match_score(title, name)
-                })
-                .map(|(id, name)| (id, name.to_string()));
-            if let Some((id, name)) = selected {
-                game_id = Some(id);
-                matched_title = name;
-            }
-        }
-        if game_id.is_none() {
-            if let Some((id, name)) = public_steam_grid_game_id(&client, &candidate).await {
-                game_id = Some(id);
-                matched_title = name;
-            }
-        }
-        if game_id.is_some() {
-            break;
-        }
-    }
-
-    if game_id.is_none() {
-        for candidate in steam_grid_title_candidates(title) {
-            if let Some((id, name)) = public_steam_grid_game_id(&client, &candidate).await {
-                game_id = Some(id);
-                matched_title = name;
-                break;
-            }
-        }
-    }
-
-    if game_id.is_none() {
-        if let Some((id, name)) = known_steam_grid_game(title) {
-            game_id = Some(id);
+    let game_id = if let Some(selected_game_id) = request.selected_game_id {
+        selected_game_id
+    } else {
+        let results = steam_grid_search_results(&client, api_key, title).await;
+        if let Some(best_match) = results.first() {
+            matched_title = best_match.name.clone();
+            best_match.id
+        } else if let Some((id, name)) = known_steam_grid_game(title) {
             matched_title = name.to_string();
+            id
+        } else {
+            let mut public_match = None;
+            for candidate in steam_grid_title_candidates(title) {
+                if let Some((id, name)) = public_steam_grid_game_id(&client, &candidate).await {
+                    public_match = Some((id, name));
+                    break;
+                }
+            }
+            let Some((id, name)) = public_match else {
+                return Err(format!("SteamGridDB no encontró {title}"));
+            };
+            matched_title = name;
+            id
         }
-    }
-
-    let game_id = game_id.ok_or_else(|| format!("SteamGridDB no encontró {title}"))?;
+    };
     let id = game_id.to_string();
     let game_details = steam_grid_json(
         &client,
@@ -1042,8 +1186,8 @@ async fn fetch_steam_grid_art(
         .and_then(first_asset_url)
         .or_else(|| landscape_grids.as_ref().and_then(first_asset_url));
     let mut cover_image = poster_grids.as_ref().and_then(first_asset_url);
-    let logo = logos.as_ref().and_then(first_asset_url);
-    let description = game_details
+    let mut logo = logos.as_ref().and_then(first_asset_url);
+    let mut description = game_details
         .as_ref()
         .and_then(|value| value.get("data"))
         .and_then(|data| {
@@ -1052,10 +1196,25 @@ async fn fetch_steam_grid_art(
                 .or_else(|| json_string_value(data.get("overview")))
         });
     if hero_image.is_none() {
-        hero_image = known_steam_grid_public_cover(title).map(str::to_string);
+        hero_image = public_steam_grid_asset(&client, game_id, "heroes")
+            .await
+            .or_else(|| public_steam_grid_asset(&client, game_id, "grids").await)
+            .or_else(|| known_steam_grid_public_cover(title).map(str::to_string));
     }
     if cover_image.is_none() {
-        cover_image = known_steam_grid_public_cover(title).map(str::to_string);
+        cover_image = public_steam_grid_asset(&client, game_id, "grids")
+            .await
+            .or_else(|| known_steam_grid_public_cover(title).map(str::to_string));
+    }
+    if logo.is_none() {
+        logo = public_steam_grid_asset(&client, game_id, "logos").await;
+    }
+    if description.is_none() {
+        let language = request.language.as_deref().unwrap_or("es");
+        description = wikipedia_description(&client, &matched_title, language).await;
+        if description.is_none() && !matched_title.eq_ignore_ascii_case(title) {
+            description = wikipedia_description(&client, title, language).await;
+        }
     }
     if hero_image.is_none() && cover_image.is_none() && logo.is_none() {
         return Err(format!("SteamGridDB no devolvió arte para {matched_title}"));
@@ -1248,8 +1407,7 @@ async fn fetch_remote_image(
     })
 }
 
-#[tauri::command]
-fn listen_spotify_callback(
+fn listen_spotify_callback_blocking(
     request: SpotifyCallbackRequest,
 ) -> Result<SpotifyCallbackResponse, String> {
     let expected_state = request.state.trim().to_string();
@@ -1260,11 +1418,15 @@ fn listen_spotify_callback(
     let listener = TcpListener::bind("127.0.0.1:53127")
         .map_err(|error| format!("No se pudo abrir el callback local de Spotify: {error}"))?;
     listener
-        .set_nonblocking(false)
+        .set_nonblocking(true)
         .map_err(|error| error.to_string())?;
 
-    if let Some(stream) = listener.incoming().take(1).next() {
-        let mut stream = stream.map_err(|error| error.to_string())?;
+    let started_at = Instant::now();
+    while started_at.elapsed() < Duration::from_secs(120) {
+        let Ok((mut stream, _address)) = listener.accept() else {
+            thread::sleep(Duration::from_millis(120));
+            continue;
+        };
         let mut buffer = [0_u8; 4096];
         let bytes_read = stream.read(&mut buffer).map_err(|error| error.to_string())?;
         let request_text = String::from_utf8_lossy(&buffer[..bytes_read]);
@@ -1312,7 +1474,16 @@ fn listen_spotify_callback(
             .ok_or_else(|| "Spotify no devolvió código OAuth".to_string());
     }
 
-    Err("Spotify no devolvió respuesta al callback local".into())
+    Err("Spotify no devolvió respuesta al callback local en 120 segundos".into())
+}
+
+#[tauri::command]
+async fn listen_spotify_callback(
+    request: SpotifyCallbackRequest,
+) -> Result<SpotifyCallbackResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || listen_spotify_callback_blocking(request))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -1484,6 +1655,7 @@ pub fn run() {
             generate_ai_tip,
             fetch_discord_presence,
             fetch_retro_achievements,
+            search_steam_grid_games,
             fetch_steam_grid_art,
             fetch_screen_scraper_art,
             fetch_remote_image,

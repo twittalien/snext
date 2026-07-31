@@ -17,6 +17,9 @@ import { getTranslation, type Language } from "./i18n";
 import {
   loadDashboardData,
   type DashboardData,
+  normalizeGameTitleKey,
+  searchSteamGridDbGames,
+  type SteamGridSearchResult,
 } from "./services/dashboardData";
 import {
   loadAssistantInsight,
@@ -52,6 +55,7 @@ type Settings = {
   retroAchievementsApiKey: string;
   steamWebApiKey: string;
   steamGridDbApiKey: string;
+  steamGridDbGameOverrides: Record<string, number>;
   screenScraperDevId: string;
   screenScraperDevPassword: string;
   screenScraperUser: string;
@@ -78,8 +82,14 @@ type SpotifyCallbackResponse = {
   code: string;
 };
 
-const SNEXT_VERSION = "0.2.5";
-const SNEXT_BUILD = "Spotify callback nativo + SteamGridDB completo";
+type PendingGameMatch = {
+  title: string;
+  key: string;
+  candidates: SteamGridSearchResult[];
+};
+
+const SNEXT_VERSION = "0.2.6";
+const SNEXT_BUILD = "Selección SteamGridDB + Spotify estable";
 const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:53127/callback";
 const SPOTIFY_SCOPES = [
   "user-read-currently-playing",
@@ -108,6 +118,7 @@ const defaultSettings: Settings = {
   retroAchievementsApiKey: "",
   steamWebApiKey: "",
   steamGridDbApiKey: "",
+  steamGridDbGameOverrides: {},
   screenScraperDevId: "",
   screenScraperDevPassword: "",
   screenScraperUser: "",
@@ -237,6 +248,9 @@ function App() {
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [artDiagnostics, setArtDiagnostics] = useState<ArtDiagnosticStep[]>([]);
   const [artDiagnosticsRunning, setArtDiagnosticsRunning] = useState(false);
+  const [pendingGameMatch, setPendingGameMatch] =
+    useState<PendingGameMatch | null>(null);
+  const [dismissedGameMatchKey, setDismissedGameMatchKey] = useState("");
 
   const t = getTranslation(settings.language);
 
@@ -323,6 +337,7 @@ function App() {
       screenScraperDevPassword: settings.screenScraperDevPassword,
       screenScraperUser: settings.screenScraperUser,
       screenScraperPassword: settings.screenScraperPassword,
+      steamGridDbGameOverrides: settings.steamGridDbGameOverrides,
       retroAchievementsUser: settings.retroAchievementsUser,
       retroAchievementsApiKey: settings.retroAchievementsApiKey,
       spotifyAccessToken: settings.spotifyAccessToken,
@@ -351,6 +366,7 @@ function App() {
       settings.screenScraperDevPassword,
       settings.screenScraperUser,
       settings.screenScraperPassword,
+      settings.steamGridDbGameOverrides,
       settings.weatherLocation,
       settings.weatherProvider,
     ],
@@ -411,6 +427,49 @@ function App() {
     settings.language,
     settings.ollamaModel,
     settings.ollamaUrl,
+  ]);
+
+  useEffect(() => {
+    const game = dashboardData?.game;
+    if (!game || !settings.steamGridDbApiKey.trim()) {
+      return;
+    }
+
+    const key = normalizeGameTitleKey(game.title);
+    if (
+      !key ||
+      key === normalizeGameTitleKey("CGGamepadAPI Task") ||
+      settings.steamGridDbGameOverrides[key] ||
+      pendingGameMatch?.key === key ||
+      dismissedGameMatchKey === key
+    ) {
+      return;
+    }
+
+    let active = true;
+    searchSteamGridDbGames(game.title, settings.steamGridDbApiKey)
+      .then((candidates) => {
+        if (active && candidates.length > 1) {
+          setPendingGameMatch({
+            title: game.title,
+            key,
+            candidates,
+          });
+        }
+      })
+      .catch((error) => {
+        console.error("SteamGridDB candidate search failed", error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    dashboardData?.game.title,
+    dismissedGameMatchKey,
+    pendingGameMatch?.key,
+    settings.steamGridDbApiKey,
+    settings.steamGridDbGameOverrides,
   ]);
 
   const initials = useMemo(() => {
@@ -563,6 +622,30 @@ function App() {
       spotifyAccessToken: "",
       spotifyTokenExpiresAt: 0,
     }));
+  };
+
+  const selectSteamGridDbMatch = (candidate: SteamGridSearchResult) => {
+    if (!pendingGameMatch) return;
+    setSettings((currentSettings) => ({
+      ...currentSettings,
+      steamGridDbGameOverrides: {
+        ...currentSettings.steamGridDbGameOverrides,
+        [pendingGameMatch.key]: candidate.id,
+      },
+    }));
+    setPendingGameMatch(null);
+    window.setTimeout(() => {
+      refreshDashboard(false).catch((error) => {
+        console.error("No se pudo refrescar después de elegir SteamGridDB", error);
+      });
+    }, 0);
+  };
+
+  const dismissSteamGridDbMatch = () => {
+    if (pendingGameMatch) {
+      setDismissedGameMatchKey(pendingGameMatch.key);
+    }
+    setPendingGameMatch(null);
   };
 
   const diagnoseArt = async () => {
@@ -861,6 +944,51 @@ function App() {
           </article>
         </section>
       </main>
+
+      {pendingGameMatch && (
+        <div className="match-layer" role="dialog" aria-modal="true">
+          <div className="match-modal">
+            <header>
+              <div>
+                <p className="eyebrow">SteamGridDB</p>
+                <h2>Selecciona el juego correcto</h2>
+              </div>
+              <button type="button" onClick={dismissSteamGridDbMatch}>
+                ×
+              </button>
+            </header>
+
+            <p className="hint">
+              Snext encontró varias coincidencias para <strong>{pendingGameMatch.title}</strong>.
+            </p>
+
+            <div className="match-list">
+              {pendingGameMatch.candidates.map((candidate) => (
+                <button
+                  type="button"
+                  key={candidate.id}
+                  onClick={() => selectSteamGridDbMatch(candidate)}
+                >
+                  <strong>{candidate.name}</strong>
+                  <span>
+                    ID {candidate.id}
+                    {candidate.release_date ? ` · ${candidate.release_date}` : ""}
+                    {candidate.types.length ? ` · ${candidate.types.join(", ")}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              className="match-auto"
+              type="button"
+              onClick={dismissSteamGridDbMatch}
+            >
+              Usar selección automática esta vez
+            </button>
+          </div>
+        </div>
+      )}
 
       {settingsOpen && (
         <div className="settings-layer">
