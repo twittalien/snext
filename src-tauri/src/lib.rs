@@ -845,6 +845,21 @@ fn known_steam_grid_game(title: &str) -> Option<(u64, &'static str)> {
     }
 }
 
+fn known_steam_grid_public_cover(title: &str) -> Option<&'static str> {
+    match normalized_game_title(title).as_str() {
+        "super mario bros wonder" => Some(
+            "https://cdn2.steamgriddb.com/thumb/66da3b21fe18692332284c64e08b8e02.jpg",
+        ),
+        "super mario odyssey" => Some(
+            "https://cdn2.steamgriddb.com/thumb/505870c8848f2d550944bf64008c9472.jpg",
+        ),
+        "super mario 3d world bowsers fury" => Some(
+            "https://cdn2.steamgriddb.com/thumb/f68d0f2ede0595c4f3b7932f082c7375.jpg",
+        ),
+        _ => None,
+    }
+}
+
 async fn public_steam_grid_game_id(
     client: &reqwest::Client,
     candidate: &str,
@@ -973,8 +988,11 @@ async fn fetch_steam_grid_art(
     .ok();
 
     let hero_image = heroes.as_ref().and_then(first_asset_url);
-    let cover_image = grids.as_ref().and_then(first_asset_url);
+    let mut cover_image = grids.as_ref().and_then(first_asset_url);
     let logo = logos.as_ref().and_then(first_asset_url);
+    if cover_image.is_none() {
+        cover_image = known_steam_grid_public_cover(title).map(str::to_string);
+    }
     if hero_image.is_none() && cover_image.is_none() && logo.is_none() {
         return Err(format!("SteamGridDB no devolvió arte para {matched_title}"));
     }
@@ -1097,7 +1115,7 @@ async fn translate_text(request: TranslationRequest) -> Result<serde_json::Value
         .append_pair("langpair", &format!("{}|{}", request.source_language, request.target_language));
     let response = client
         .get(url)
-        .header("User-Agent", "Snext/0.2.2")
+        .header("User-Agent", "Snext/0.2.3")
         .send()
         .await
         .map_err(|error| error.to_string())?;

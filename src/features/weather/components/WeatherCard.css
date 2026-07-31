@@ -390,7 +390,9 @@
 .weather-v2__clock--dark {
   color: #101b36;
   background: transparent;
-  text-shadow: 0 0.05rem 0.18rem rgba(255, 255, 255, 0.86);
+  text-shadow:
+    0 0.05rem 0.18rem rgba(255, 255, 255, 0.92),
+    0 0 0.35rem rgba(255, 255, 255, 0.5);
 }
 
 .weather-v2__clock span {
