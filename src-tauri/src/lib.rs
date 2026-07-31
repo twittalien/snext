@@ -1196,15 +1196,19 @@ async fn fetch_steam_grid_art(
                 .or_else(|| json_string_value(data.get("overview")))
         });
     if hero_image.is_none() {
-        hero_image = public_steam_grid_asset(&client, game_id, "heroes")
-            .await
-            .or_else(|| public_steam_grid_asset(&client, game_id, "grids").await)
-            .or_else(|| known_steam_grid_public_cover(title).map(str::to_string));
+        hero_image = public_steam_grid_asset(&client, game_id, "heroes").await;
+        if hero_image.is_none() {
+            hero_image = public_steam_grid_asset(&client, game_id, "grids").await;
+        }
+        if hero_image.is_none() {
+            hero_image = known_steam_grid_public_cover(title).map(str::to_string);
+        }
     }
     if cover_image.is_none() {
-        cover_image = public_steam_grid_asset(&client, game_id, "grids")
-            .await
-            .or_else(|| known_steam_grid_public_cover(title).map(str::to_string));
+        cover_image = public_steam_grid_asset(&client, game_id, "grids").await;
+        if cover_image.is_none() {
+            cover_image = known_steam_grid_public_cover(title).map(str::to_string);
+        }
     }
     if logo.is_none() {
         logo = public_steam_grid_asset(&client, game_id, "logos").await;
