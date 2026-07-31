@@ -166,8 +166,16 @@
   gap: var(--snext-space-4);
 }
 
-.game-hero__identity {
+.game-hero__game-row {
+  display: grid;
+  grid-template-columns: clamp(7rem, 11vw, 10rem) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(1rem, 2.5vw, 2rem);
   margin-top: auto;
+}
+
+.game-hero__identity {
+  min-width: 0;
 }
 
 .game-hero__identity h1 {
@@ -321,20 +329,8 @@
 }
 
 .game-hero__cover {
-  position: absolute;
-  z-index: 4;
-  bottom: clamp(
-    var(--snext-space-5),
-    4vw,
-    var(--snext-space-8)
-  );
-  left: clamp(
-    var(--snext-space-5),
-    4vw,
-    var(--snext-space-10)
-  );
   display: grid;
-  width: clamp(6.75rem, 11vw, 8.75rem);
+  width: 100%;
   aspect-ratio: 3 / 4;
   place-items: center;
   overflow: hidden;
@@ -456,6 +452,11 @@
     margin-top: clamp(14rem, 33vh, 20rem);
   }
 
+  .game-hero__game-row {
+    grid-template-columns: minmax(6rem, 23vw) minmax(0, 1fr);
+    gap: 1rem;
+  }
+
   .game-hero__identity h1 {
     max-width: 14ch;
     font-size: clamp(2.3rem, 10vw, 4.4rem);
@@ -478,12 +479,6 @@
     display: flex;
     align-items: baseline;
     gap: var(--snext-space-2);
-  }
-
-  .game-hero__cover {
-    bottom: var(--snext-space-5);
-    left: var(--snext-space-5);
-    width: clamp(6rem, 23vw, 8rem);
   }
 
   .game-hero__pattern {

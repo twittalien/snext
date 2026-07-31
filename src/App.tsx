@@ -704,6 +704,55 @@ function App() {
             </header>
 
             <div className="settings-content">
+              <section className="setup-guide">
+                <h3>Guía rápida de tarjetas</h3>
+                <p className="hint">
+                  Configura una integración, guarda los cambios cerrando este panel y espera la siguiente actualización automática.
+                </p>
+
+                <details open>
+                  <summary>Juego activo y SteamGridDB</summary>
+                  <p>
+                    La detección se actualiza cada 10 segundos. Para arte real, crea una API key en SteamGridDB, pégala en Integraciones y usa el nombre exacto del juego. La tarjeta usa hero, logo y portada vertical; si SteamGridDB no encuentra coincidencia conserva el último fallback.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>RetroAchievements</summary>
+                  <p>
+                    Escribe tu usuario y tu Web API Key. Snext consulta tus juegos recientes y el set completo: carátula, fondo, badges, nombres, puntos, descripciones y fecha de desbloqueo. Los logros ocultos sin desbloquear mantienen su estado protegido.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>IA con Ollama o Gemini</summary>
+                  <p>
+                    En Bazzite instala Ollama con <code>curl -fsSL https://ollama.com/install.sh | sh</code>; después ejecuta <code>ollama pull llama3.1</code> y verifica con <code>ollama run llama3.1</code>. Mantén Ollama ejecutándose y deja URL <code>http://localhost:11434</code> y modelo <code>llama3.1</code>. Como alternativa, pega una API key de Gemini. Si ninguna está disponible, Snext mostrará el consejo local y lo indicará como fallback.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>Spotify</summary>
+                  <p>
+                    Crea una aplicación en Spotify for Developers, usa el Client ID y genera un access token OAuth con los permisos <code>user-read-currently-playing</code> y <code>user-read-playback-state</code>. Pega el token temporal en el campo correspondiente; cuando expire, genera uno nuevo.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>Discord</summary>
+                  <p>
+                    En Discord Developer Portal crea una aplicación y un bot, copia su token y habilita el intent de miembros si el portal lo solicita. Invita el bot a tu servidor, copia el ID del servidor con Developer Mode y pega token e ID. Usa Servidor compartido para amigos; RPC local queda reservado para una integración nativa futura.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>Clima y sistema</summary>
+                  <p>
+                    Open-Meteo funciona sin key: escribe ciudad y conserva ese proveedor. OpenWeatherMap requiere su API key. En Bazzite, CPU, GPU, VRAM, temperatura y batería se leen de nvidia-smi, lm-sensors y UPower; si algún comando no está disponible, esa métrica aparece como N/D.
+                  </p>
+                </details>
+              </section>
+
               <section>
                 <h3>{t.profile}</h3>
 

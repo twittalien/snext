@@ -134,26 +134,34 @@ export function GameHero({
             </Badge>
           </div>
 
-          <div className="game-hero__identity">
-            {game.logo ? (
-              <img
-                className="game-hero__logo"
-                src={game.logo}
-                alt={game.title}
-              />
-            ) : (
-              <h1>{game.title}</h1>
+          <div className="game-hero__game-row">
+            {hasCoverImage && (
+              <div className="game-hero__cover game-hero__cover--image">
+                <img src={game.coverImage} alt={`${game.title} portada`} />
+              </div>
             )}
 
-            <div className="game-hero__meta">
-              <PlatformBadge
-                platform={`${game.platform} ${game.source} ${game.platformHint ?? ""}`}
-                label={platformInfo.name}
-              />
-              <i aria-hidden="true" />
-              <span>{game.platform}</span>
-              <i aria-hidden="true" />
-              <span>{game.source}</span>
+            <div className="game-hero__identity">
+              {game.logo ? (
+                <img
+                  className="game-hero__logo"
+                  src={game.logo}
+                  alt={game.title}
+                />
+              ) : (
+                <h1>{game.title}</h1>
+              )}
+
+              <div className="game-hero__meta">
+                <PlatformBadge
+                  platform={`${game.platform} ${game.source} ${game.platformHint ?? ""}`}
+                  label={platformInfo.name}
+                />
+                <i aria-hidden="true" />
+                <span>{game.platform}</span>
+                <i aria-hidden="true" />
+                <span>{game.source}</span>
+              </div>
             </div>
           </div>
 
@@ -190,11 +198,6 @@ export function GameHero({
           </div>
         </div>
 
-        {hasCoverImage && (
-  <div className="game-hero__cover game-hero__cover--image">
-    <img src={game.coverImage} alt="" />
-  </div>
-)}
       </div>
     </Card>
   );

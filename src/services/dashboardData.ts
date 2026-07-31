@@ -119,10 +119,34 @@ type SteamGridDbAssetResponse = {
 };
 
 type RetroAchievementsRecentGame = {
+  ID?: number;
+  GameID?: number;
   Title?: string;
   ConsoleName?: string;
+  ImageIcon?: string;
+  ImageBoxArt?: string;
+  ImageTitle?: string;
   NumPossibleAchievements?: number;
+  NumAchieved?: number;
   PossibleScore?: number;
+  UserScore?: number;
+  UserCompletion?: number;
+};
+
+type RetroAchievementApiItem = {
+  ID?: number;
+  Title?: string;
+  Description?: string;
+  Points?: number;
+  TrueRatio?: number;
+  BadgeName?: string;
+  DateEarned?: string | null;
+  DateEarnedHardcore?: string | null;
+  Flags?: number;
+};
+
+type RetroAchievementsGameDetails = RetroAchievementsRecentGame & {
+  Achievements?: Record<string, RetroAchievementApiItem>;
 };
 
 type SpotifyPlaybackResponse = {
@@ -678,18 +702,29 @@ async function loadSteamGridDbArt(
     return {};
   }
 
-  const headers = { Authorization: `Bearer ${apiKey}` };
-  const searchUrl = `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(
+  const headers = {
+    Accept: "application/json",
+    Authorization: `Bearer ${apiKey.trim().replace(/^Bearer\s+/i, "")}`,
+  };
+  const queryCandidates = [
     game.title,
-  )}`;
-  const searchResponse = await fetch(searchUrl, { headers });
+    game.title.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim(),
+  ].filter((value, index, list) => value && list.indexOf(value) === index);
+  let gameId: number | undefined;
 
-  if (!searchResponse.ok) {
-    return {};
+  for (const query of queryCandidates) {
+    const searchResponse = await fetch(
+      `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(query)}`,
+      { headers },
+    );
+    if (searchResponse.ok) {
+      const search = (await searchResponse.json()) as SteamGridDbSearchResponse;
+      gameId = search.data?.find((item) =>
+        item.name.toLowerCase() === query.toLowerCase(),
+      )?.id ?? search.data?.[0]?.id;
+    }
+    if (gameId) break;
   }
-
-  const search = (await searchResponse.json()) as SteamGridDbSearchResponse;
-  const gameId = search.data?.[0]?.id;
 
   if (!gameId) {
     return {};
@@ -787,45 +822,58 @@ async function loadRetroAchievements(
       source: "retroachievements",
       unlocked: index === 0,
     }));
-    const achievementGames: AchievementGame[] = games.slice(0, 8).map((game, index) => {
-      const total = Math.max(1, game.NumPossibleAchievements ?? 30);
-      const unlocked = Math.max(1, Math.round(total * (0.2 + (index % 5) * 0.13)));
-      const details: AchievementDetail[] = Array.from(
-        { length: Math.min(total, 12) },
-        (_, detailIndex) => ({
-          id: `${game.Title ?? "ra"}-${detailIndex}`,
-          name:
-            detailIndex === 0
-              ? "Ultimo logro desbloqueado"
-              : detailIndex % 4 === 0
-                ? "Logro oculto"
-                : `Logro ${detailIndex + 1}`,
-          description:
-            detailIndex % 4 === 0
-              ? "El proveedor marca este logro como oculto."
-              : "Detalle disponible al consultar el set completo del juego.",
-          unlocked: detailIndex < unlocked,
-          hidden: detailIndex % 4 === 0,
-          points: 5 + (detailIndex % 4) * 5,
-          hardcore: detailIndex % 5 === 0,
-          unlockedAt: detailIndex < unlocked ? "Reciente" : undefined,
-        }),
+    const achievementGames: AchievementGame[] = await Promise.all(games.slice(0, 8).map(async (game, index) => {
+      const gameId = game.GameID ?? game.ID;
+      let detailsResponse: Response | undefined;
+      if (gameId) {
+        detailsResponse = await fetch(
+          `https://retroachievements.org/API/API_GetGame.php?i=${gameId}&y=${encodeURIComponent(options.retroAchievementsApiKey)}`,
+        );
+      }
+      const detailsData = detailsResponse?.ok
+        ? (await detailsResponse.json()) as RetroAchievementsGameDetails
+        : undefined;
+      const apiAchievements = Object.values(detailsData?.Achievements ?? {});
+      const total = Math.max(
+        1,
+        game.NumPossibleAchievements ?? detailsData?.NumPossibleAchievements ?? apiAchievements.length ?? 30,
       );
+      const unlocked = Math.max(0, game.NumAchieved ?? detailsData?.NumAchieved ?? apiAchievements.filter((item) => item.DateEarned).length);
+      const details: AchievementDetail[] = apiAchievements.slice(0, 40).map((item, detailIndex) => ({
+        id: String(item.ID ?? `${game.Title ?? "ra"}-${detailIndex}`),
+        name: item.Title ?? `Logro ${detailIndex + 1}`,
+        description: item.Description ?? "Sin descripción disponible.",
+        unlocked: Boolean(item.DateEarned),
+        hidden: Boolean(item.Flags && item.Flags > 0),
+        points: item.Points ?? 0,
+        rarityPercent: item.TrueRatio,
+        hardcore: Boolean(item.DateEarnedHardcore),
+        unlockedAt: item.DateEarned ?? undefined,
+        image: item.BadgeName
+          ? `https://media.retroachievements.org/Badge/${item.BadgeName}.png`
+          : undefined,
+      }));
 
       return {
         id: `ra-${game.Title ?? index}`,
-        title: game.Title ?? `RetroAchievement ${index + 1}`,
-        platform: game.ConsoleName ?? "RetroArch",
+        title: detailsData?.Title ?? game.Title ?? `RetroAchievement ${index + 1}`,
+        platform: detailsData?.ConsoleName ?? game.ConsoleName ?? "RetroArch",
         provider: "retroachievements",
-        image: "/demo/game/cover.svg",
-        heroImage: "/demo/game/hero.svg",
+        image: detailsData?.ImageBoxArt
+          ? `https://media.retroachievements.org${detailsData.ImageBoxArt.startsWith("/") ? "" : "/"}${detailsData.ImageBoxArt}`
+          : game.ImageBoxArt
+            ? `https://media.retroachievements.org${game.ImageBoxArt.startsWith("/") ? "" : "/"}${game.ImageBoxArt}`
+            : "/demo/game/cover.svg",
+        heroImage: detailsData?.ImageTitle
+          ? `https://media.retroachievements.org${detailsData.ImageTitle.startsWith("/") ? "" : "/"}${detailsData.ImageTitle}`
+          : "/demo/game/hero.svg",
         unlocked,
         total,
-        points: Math.max(0, game.PossibleScore ?? unlocked * 5),
-        recentAchievement: details.find((detail) => detail.unlocked),
+        points: Math.max(0, details.reduce((sum, detail) => sum + (detail.points ?? 0), 0)),
+        recentAchievement: details.find((detail) => detail.unlocked) ?? details[0],
         achievements: details,
       };
-    });
+    }));
 
     return {
       items,
