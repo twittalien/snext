@@ -699,13 +699,6 @@ async fn fetch_retro_achievements(
     Ok(enriched_games)
 }
 
-fn first_asset_url(data: &serde_json::Value) -> Option<String> {
-    data.get("data")?
-        .as_array()?
-        .iter()
-        .find_map(|asset| asset.get("url")?.as_str().map(str::to_string))
-}
-
 fn json_string_value(value: Option<&serde_json::Value>) -> Option<String> {
     value
         .and_then(serde_json::Value::as_str)
@@ -1022,20 +1015,101 @@ async fn steam_grid_search_results(
     results
 }
 
-fn extract_steam_grid_cdn_url(html: &str) -> Option<String> {
+fn extract_steam_grid_cdn_urls(html: &str) -> Vec<String> {
+    let mut urls = Vec::new();
     for marker in ["https:\\/\\/cdn", "https://cdn"] {
-        let Some(start) = html.find(marker) else {
-            continue;
-        };
-        let tail = &html[start..];
-        let raw = tail
+        let mut offset = 0;
+        while let Some(start) = html[offset..].find(marker) {
+            let absolute_start = offset + start;
+            let tail = &html[absolute_start..];
+            let raw = tail
             .split(|character| matches!(character, '"' | '\'' | '<' | '>' | ')' | ' '))
             .next()
             .unwrap_or_default()
             .replace("\\/", "/")
-            .replace("\\u0026", "&");
-        if raw.contains("steamgriddb.com") {
-            return Some(raw);
+                .replace("\\u0026", "&")
+                .trim_end_matches('\\')
+                .to_string();
+            let lower = raw.to_ascii_lowercase();
+            if raw.contains("steamgriddb.com")
+                && !raw.ends_with('/')
+                && [".jpg", ".jpeg", ".png", ".webp"]
+                    .iter()
+                    .any(|extension| lower.contains(extension))
+                && !urls.iter().any(|url| url == &raw)
+            {
+                urls.push(raw);
+            }
+            offset = absolute_start + marker.len();
+        }
+    }
+    urls
+}
+
+async fn remote_image_url_ok(client: &reqwest::Client, url: &str) -> bool {
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+    let allowed = host == "media.retroachievements.org"
+        || host == "steamgriddb.com"
+        || host.ends_with(".steamgriddb.com")
+        || (host == "s3.amazonaws.com" && parsed.path().starts_with("/steamgriddb/"))
+        || host == "screenscraper.fr"
+        || host.ends_with(".screenscraper.fr")
+        || host.ends_with(".wikipedia.org")
+        || host.ends_with(".wikimedia.org");
+    if parsed.scheme() != "https" || !allowed {
+        return false;
+    }
+
+    let head_ok = client
+        .head(url)
+        .send()
+        .await
+        .ok()
+        .filter(|response| response.status().is_success())
+        .and_then(|response| {
+            response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(|content_type| content_type.starts_with("image/"))
+        })
+        .unwrap_or(false);
+    if head_ok {
+        return true;
+    }
+
+    client
+        .get(url)
+        .header(reqwest::header::RANGE, "bytes=0-64")
+        .send()
+        .await
+        .ok()
+        .filter(|response| response.status().is_success())
+        .and_then(|response| {
+            response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(|content_type| content_type.starts_with("image/"))
+        })
+        .unwrap_or(false)
+}
+
+async fn first_valid_asset_url(
+    client: &reqwest::Client,
+    data: Option<&serde_json::Value>,
+) -> Option<String> {
+    let assets = data?.get("data")?.as_array()?;
+    for asset in assets {
+        let Some(url) = asset.get("url").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        if remote_image_url_ok(client, url).await {
+            return Some(url.to_string());
         }
     }
     None
@@ -1048,7 +1122,12 @@ async fn public_steam_grid_asset(
 ) -> Option<String> {
     let url = format!("https://www.steamgriddb.com/game/{game_id}/{section}");
     let html = client.get(url).send().await.ok()?.text().await.ok()?;
-    extract_steam_grid_cdn_url(&html)
+    for url in extract_steam_grid_cdn_urls(&html) {
+        if remote_image_url_ok(client, &url).await {
+            return Some(url);
+        }
+    }
+    None
 }
 
 async fn wikipedia_description(
@@ -1181,12 +1260,12 @@ async fn fetch_steam_grid_art(
     .await
     .ok();
 
-    let mut hero_image = heroes
-        .as_ref()
-        .and_then(first_asset_url)
-        .or_else(|| landscape_grids.as_ref().and_then(first_asset_url));
-    let mut cover_image = poster_grids.as_ref().and_then(first_asset_url);
-    let mut logo = logos.as_ref().and_then(first_asset_url);
+    let mut hero_image = first_valid_asset_url(&client, heroes.as_ref()).await;
+    if hero_image.is_none() {
+        hero_image = first_valid_asset_url(&client, landscape_grids.as_ref()).await;
+    }
+    let mut cover_image = first_valid_asset_url(&client, poster_grids.as_ref()).await;
+    let mut logo = first_valid_asset_url(&client, logos.as_ref()).await;
     let mut description = game_details
         .as_ref()
         .and_then(|value| value.get("data"))
@@ -1211,13 +1290,22 @@ async fn fetch_steam_grid_art(
         }
     }
     if logo.is_none() {
-        logo = public_steam_grid_asset(&client, game_id, "logos").await;
+        logo = public_steam_grid_asset(&client, game_id, "logos")
+            .await
+            .filter(|url| !url.contains("/thumb/"));
     }
     if description.is_none() {
         let language = request.language.as_deref().unwrap_or("es");
-        description = wikipedia_description(&client, &matched_title, language).await;
-        if description.is_none() && !matched_title.eq_ignore_ascii_case(title) {
-            description = wikipedia_description(&client, title, language).await;
+        for (description_title, description_language) in [
+            (matched_title.as_str(), language),
+            (title, language),
+            (matched_title.as_str(), "en"),
+            (title, "en"),
+        ] {
+            if description.is_some() {
+                break;
+            }
+            description = wikipedia_description(&client, description_title, description_language).await;
         }
     }
     if hero_image.is_none() && cover_image.is_none() && logo.is_none() {
@@ -1381,8 +1469,14 @@ async fn fetch_remote_image(
     if url.scheme() != "https" || !allowed {
         return Err("El origen de la imagen no está permitido".into());
     }
+    if (host == "steamgriddb.com" || host.ends_with(".steamgriddb.com")) && url.path() == "/" {
+        return Err("La URL de SteamGridDB no apunta a una imagen".into());
+    }
 
-    let response = reqwest::Client::new()
+    let response = reqwest::Client::builder()
+        .user_agent("Snext/0.3 image proxy")
+        .build()
+        .map_err(|error| error.to_string())?
         .get(url)
         .send()
         .await
@@ -1395,9 +1489,11 @@ async fn fetch_remote_image(
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
-        .filter(|value| value.starts_with("image/"))
-        .unwrap_or("image/png")
-        .to_string();
+        .map(str::to_string)
+        .ok_or_else(|| "La respuesta no declaró tipo de imagen".to_string())?;
+    if !content_type.starts_with("image/") {
+        return Err(format!("La respuesta no es imagen: {content_type}"));
+    }
     let bytes = response.bytes().await.map_err(|error| error.to_string())?;
     if bytes.len() > 10 * 1024 * 1024 {
         return Err("La imagen supera el límite de 10 MB".into());
