@@ -19,6 +19,10 @@ import {
   loadAssistantInsight,
   type AssistantInsight,
 } from "./services/gameAssistant";
+import {
+  runArtDiagnostics,
+  type ArtDiagnosticStep,
+} from "./services/artDiagnostics";
 
 type AvatarSource = "initials" | "local" | "steam" | "retro";
 type Theme = "auto" | "dark" | "light";
@@ -185,6 +189,8 @@ function App() {
     useState<AssistantInsight | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const [artDiagnostics, setArtDiagnostics] = useState<ArtDiagnosticStep[]>([]);
+  const [artDiagnosticsRunning, setArtDiagnosticsRunning] = useState(false);
 
   const t = getTranslation(settings.language);
 
@@ -400,6 +406,22 @@ function App() {
       geminiApiKey: "",
       discordBotToken: "",
     }));
+  };
+
+  const diagnoseArt = async () => {
+    setArtDiagnosticsRunning(true);
+    setArtDiagnostics([]);
+    try {
+      const results = await runArtDiagnostics({
+        gameTitle: dashboardData?.game.title ?? "Sonic the Hedgehog",
+        steamGridDbApiKey: settings.steamGridDbApiKey,
+        retroAchievementsUser: settings.retroAchievementsUser,
+        retroAchievementsApiKey: settings.retroAchievementsApiKey,
+      });
+      setArtDiagnostics(results);
+    } finally {
+      setArtDiagnosticsRunning(false);
+    }
   };
 
   const avatarContent =
@@ -1232,6 +1254,42 @@ function App() {
                     placeholder="Servidor de Discord"
                   />
                 </label>
+              </section>
+
+              <section className="art-diagnostics">
+                <div className="art-diagnostics__heading">
+                  <div>
+                    <h3>Diagnóstico de arte</h3>
+                    <p className="hint">
+                      Prueba las APIs, la descarga nativa y el renderizado sin mostrar tus claves.
+                    </p>
+                  </div>
+                  <button
+                    className="diagnostic-action"
+                    type="button"
+                    disabled={artDiagnosticsRunning}
+                    onClick={diagnoseArt}
+                  >
+                    {artDiagnosticsRunning ? "Probando..." : "Ejecutar"}
+                  </button>
+                </div>
+
+                {artDiagnostics.length > 0 && (
+                  <div className="art-diagnostics__results">
+                    {artDiagnostics.map((step) => (
+                      <article
+                        className={`art-diagnostic art-diagnostic--${step.status}`}
+                        key={step.id}
+                      >
+                        {step.preview && <img src={step.preview} alt="" />}
+                        <div>
+                          <strong>{step.label}</strong>
+                          <p>{step.detail}</p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
               </section>
 
               <section>

@@ -594,10 +594,12 @@ async fn fetch_retro_achievements(
         };
 
         let details_response = client
-            .get("https://retroachievements.org/API/API_GetGameExtended.php")
+            .get("https://retroachievements.org/API/API_GetGameInfoAndUserProgress.php")
             .query(&[
-                ("i", game_id.to_string()),
+                ("g", game_id.to_string()),
+                ("u", request.username.clone()),
                 ("y", request.api_key.clone()),
+                ("a", "1".to_string()),
             ])
             .send()
             .await
