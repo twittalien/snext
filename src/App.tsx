@@ -71,8 +71,8 @@ type Friend = {
   color: string;
 };
 
-const SNEXT_VERSION = "0.2.1";
-const SNEXT_BUILD = "Corrección de compilación + proveedores de arte";
+const SNEXT_VERSION = "0.2.2";
+const SNEXT_BUILD = "Arte determinista + reloj transparente";
 
 const defaultSettings: Settings = {
   name: "twittalien",

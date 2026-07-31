@@ -834,6 +834,17 @@ fn steam_grid_title_candidates(title: &str) -> Vec<String> {
     candidates
 }
 
+fn known_steam_grid_game(title: &str) -> Option<(u64, &'static str)> {
+    match normalized_game_title(title).as_str() {
+        "super mario bros wonder" => Some((5409928, "Super Mario Bros. Wonder")),
+        "super mario odyssey" => Some((5245268, "Super Mario Odyssey")),
+        "super mario 3d world bowsers fury" => {
+            Some((5266526, "Super Mario 3D World + Bowser's Fury"))
+        }
+        _ => None,
+    }
+}
+
 async fn public_steam_grid_game_id(
     client: &reqwest::Client,
     candidate: &str,
@@ -927,6 +938,13 @@ async fn fetch_steam_grid_art(
                 matched_title = name;
                 break;
             }
+        }
+    }
+
+    if game_id.is_none() {
+        if let Some((id, name)) = known_steam_grid_game(title) {
+            game_id = Some(id);
+            matched_title = name.to_string();
         }
     }
 
@@ -1079,7 +1097,7 @@ async fn translate_text(request: TranslationRequest) -> Result<serde_json::Value
         .append_pair("langpair", &format!("{}|{}", request.source_language, request.target_language));
     let response = client
         .get(url)
-        .header("User-Agent", "Snext/0.2.1")
+        .header("User-Agent", "Snext/0.2.2")
         .send()
         .await
         .map_err(|error| error.to_string())?;
@@ -1110,6 +1128,7 @@ async fn fetch_remote_image(
     let allowed = host == "media.retroachievements.org"
         || host == "steamgriddb.com"
         || host.ends_with(".steamgriddb.com")
+        || (host == "s3.amazonaws.com" && url.path().starts_with("/steamgriddb/"))
         || host == "screenscraper.fr"
         || host.ends_with(".screenscraper.fr");
     if url.scheme() != "https" || !allowed {
