@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import { AchievementsCarousel } from "./features/achievements";
 import { GameHero } from "./features/game";
@@ -66,8 +67,8 @@ type Friend = {
   color: string;
 };
 
-const SNEXT_VERSION = "0.1.8";
-const SNEXT_BUILD = "Arte aproximado + traducción + pantalla completa";
+const SNEXT_VERSION = "0.1.9";
+const SNEXT_BUILD = "Búsqueda tolerante + traducción corregida + ventana";
 
 const defaultSettings: Settings = {
   name: "twittalien",
@@ -81,7 +82,7 @@ const defaultSettings: Settings = {
   density: "comfortable",
   transparency: 78,
   dynamicBackgrounds: true,
-  startFullscreen: true,
+  startFullscreen: false,
   preferredMonitor: "auto",
   detectionRules: "retroarch\nryujinx\ncitra\nsteam\nheroic\nlutris",
   steamUserId: "",
@@ -183,6 +184,7 @@ function Icon({ children }: { children: string }) {
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [now, setNow] = useState(new Date());
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(
@@ -196,6 +198,23 @@ function App() {
   const [artDiagnosticsRunning, setArtDiagnosticsRunning] = useState(false);
 
   const t = getTranslation(settings.language);
+
+  useEffect(() => {
+    getCurrentWindow()
+      .isFullscreen()
+      .then(setIsFullscreen)
+      .catch(() => setIsFullscreen(false));
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    const nextValue = !isFullscreen;
+    try {
+      await getCurrentWindow().setFullscreen(nextValue);
+      setIsFullscreen(nextValue);
+    } catch (error) {
+      console.error("No se pudo cambiar el modo de ventana", error);
+    }
+  }, [isFullscreen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -487,6 +506,16 @@ function App() {
             <span className="user-avatar">{avatarContent}</span>
             <span>{settings.name}</span>
           </div>
+
+          <button
+            className="window-mode-button"
+            type="button"
+            aria-label={isFullscreen ? "Usar ventana" : "Pantalla completa"}
+            title={isFullscreen ? "Usar ventana" : "Pantalla completa"}
+            onClick={toggleFullscreen}
+          >
+            {isFullscreen ? "▣" : "⛶"}
+          </button>
 
           <button
             className="settings-button"

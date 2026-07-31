@@ -1,7 +1,6 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path, process::Command, thread, time::Duration};
-use tauri::{Manager, PhysicalPosition, PhysicalSize};
 use sysinfo::{ProcessesToUpdate, System};
 
 #[derive(Serialize)]
@@ -109,6 +108,7 @@ struct MyMemoryResponse {
 
 #[derive(Deserialize)]
 struct MyMemoryResponseData {
+    #[serde(rename = "translatedText")]
     translated_text: Option<String>,
 }
 
@@ -691,6 +691,19 @@ fn normalized_game_title(title: &str) -> String {
         .join(" ")
 }
 
+fn steam_grid_match_score(target: &str, candidate: &str) -> usize {
+    let target = normalized_game_title(target);
+    let candidate = normalized_game_title(candidate);
+    if target == candidate {
+        return 0;
+    }
+    let target_tokens: std::collections::HashSet<&str> = target.split_whitespace().collect();
+    let candidate_tokens: std::collections::HashSet<&str> = candidate.split_whitespace().collect();
+    let missing = target_tokens.difference(&candidate_tokens).count();
+    let extra = candidate_tokens.difference(&target_tokens).count();
+    1 + missing * 3 + extra
+}
+
 fn steam_grid_title_candidates(title: &str) -> Vec<String> {
     let without_metadata = title
         .split('(')
@@ -708,6 +721,22 @@ fn steam_grid_title_candidates(title: &str) -> Vec<String> {
         without_metadata.replace("Bowser's Fury", "+ Bowser's Fury"),
         normalized.clone(),
     ];
+    let punctuation_variant = without_metadata
+        .split_whitespace()
+        .map(|word| match word.to_ascii_lowercase().as_str() {
+            "bros" => "Bros.",
+            "dr" => "Dr.",
+            "mr" => "Mr.",
+            "ms" => "Ms.",
+            _ => word,
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    candidates.push(punctuation_variant);
+    let words: Vec<&str> = without_metadata.split_whitespace().collect();
+    for count in (2..=words.len().min(5)).rev() {
+        candidates.push(words[..count].join(" "));
+    }
     if normalized.starts_with("super mario 3d world") {
         candidates.push("Super Mario 3D World + Bowser's Fury".into());
         candidates.push("Super Mario 3D World".into());
@@ -785,8 +814,7 @@ async fn fetch_steam_grid_art(
                 })
                 .min_by_key(|(_, name)| {
                     let left = normalized_game_title(name);
-                    let right = normalized_game_title(&candidate);
-                    if left == right { 0 } else if left.contains(right.as_str()) || right.contains(left.as_str()) { 1 } else { 2 }
+                    steam_grid_match_score(&candidate, name)
                 })
                 .map(|(id, name)| (id, name.to_string()));
             if let Some((id, name)) = selected {
@@ -867,7 +895,7 @@ async fn translate_text(request: TranslationRequest) -> Result<serde_json::Value
         .append_pair("langpair", &format!("{}|{}", request.source_language, request.target_language));
     let response = reqwest::Client::new()
         .get(url)
-        .header("User-Agent", "Snext/0.1.8")
+        .header("User-Agent", "Snext/0.1.9")
         .send()
         .await
         .map_err(|error| error.to_string())?;
@@ -1091,23 +1119,6 @@ fn detect_active_game() -> ActiveGame {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
-            let window = app.get_webview_window("main").ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::NotFound, "No se encontró la ventana principal")
-            })?;
-            let monitors = app.available_monitors()?;
-            let monitor = monitors.get(1).or_else(|| monitors.first());
-            window.set_decorations(false)?;
-            window.set_always_on_top(false)?;
-            if let Some(monitor) = monitor {
-                let position = monitor.position();
-                let size = monitor.size();
-                window.set_position(PhysicalPosition::new(position.x, position.y))?;
-                window.set_size(PhysicalSize::new(size.width, size.height))?;
-            }
-            window.set_fullscreen(true)?;
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             get_system_snapshot,
             get_hardware_snapshot,
