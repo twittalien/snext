@@ -1,6 +1,14 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path, process::Command, thread, time::Duration};
+use std::{
+    fs,
+    io::{Read, Write},
+    net::TcpListener,
+    path::Path,
+    process::Command,
+    thread,
+    time::Duration,
+};
 use sysinfo::{ProcessesToUpdate, System};
 
 #[derive(Serialize)]
@@ -105,6 +113,16 @@ struct RemoteImageRequest {
 #[derive(Serialize)]
 struct RemoteImageResponse {
     data_url: String,
+}
+
+#[derive(Deserialize)]
+struct SpotifyCallbackRequest {
+    state: String,
+}
+
+#[derive(Serialize)]
+struct SpotifyCallbackResponse {
+    code: String,
 }
 
 #[derive(Deserialize)]
@@ -1231,6 +1249,73 @@ async fn fetch_remote_image(
 }
 
 #[tauri::command]
+fn listen_spotify_callback(
+    request: SpotifyCallbackRequest,
+) -> Result<SpotifyCallbackResponse, String> {
+    let expected_state = request.state.trim().to_string();
+    if expected_state.is_empty() {
+        return Err("Falta el estado OAuth de Spotify".into());
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:53127")
+        .map_err(|error| format!("No se pudo abrir el callback local de Spotify: {error}"))?;
+    listener
+        .set_nonblocking(false)
+        .map_err(|error| error.to_string())?;
+
+    if let Some(stream) = listener.incoming().take(1).next() {
+        let mut stream = stream.map_err(|error| error.to_string())?;
+        let mut buffer = [0_u8; 4096];
+        let bytes_read = stream.read(&mut buffer).map_err(|error| error.to_string())?;
+        let request_text = String::from_utf8_lossy(&buffer[..bytes_read]);
+        let first_line = request_text.lines().next().unwrap_or_default();
+        let path = first_line
+            .split_whitespace()
+            .nth(1)
+            .ok_or_else(|| "Spotify no devolvió una ruta válida".to_string())?;
+        let callback_url = reqwest::Url::parse(&format!("http://127.0.0.1:53127{path}"))
+            .map_err(|error| error.to_string())?;
+        let mut code = None;
+        let mut state = None;
+        let mut oauth_error = None;
+        for (key, value) in callback_url.query_pairs() {
+            match key.as_ref() {
+                "code" => code = Some(value.into_owned()),
+                "state" => state = Some(value.into_owned()),
+                "error" => oauth_error = Some(value.into_owned()),
+                _ => {}
+            }
+        }
+
+        let response_body = if oauth_error.is_some() {
+            "Spotify no autorizó Snext. Puedes cerrar esta pestaña."
+        } else {
+            "Spotify conectado. Puedes volver a Snext."
+        };
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body,
+        );
+        let _ = stream.write_all(response.as_bytes());
+
+        if let Some(error) = oauth_error {
+            return Err(format!("Spotify devolvió {error}"));
+        }
+        if state.as_deref() != Some(expected_state.as_str()) {
+            return Err("La respuesta de Spotify no coincide con esta sesión de Snext".into());
+        }
+
+        return code
+            .filter(|value| !value.trim().is_empty())
+            .map(|code| SpotifyCallbackResponse { code })
+            .ok_or_else(|| "Spotify no devolvió código OAuth".to_string());
+    }
+
+    Err("Spotify no devolvió respuesta al callback local".into())
+}
+
+#[tauri::command]
 fn detect_active_game() -> ActiveGame {
     let mut system = System::new_all();
     system.refresh_processes(ProcessesToUpdate::All, true);
@@ -1402,6 +1487,7 @@ pub fn run() {
             fetch_steam_grid_art,
             fetch_screen_scraper_art,
             fetch_remote_image,
+            listen_spotify_callback,
             detect_active_game,
             translate_text
         ])

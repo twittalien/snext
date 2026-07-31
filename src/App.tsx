@@ -5,7 +5,9 @@ import {
   useMemo,
   useState,
 } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import "./App.css";
 import { AchievementsCarousel } from "./features/achievements";
 import { GameHero } from "./features/game";
@@ -72,9 +74,13 @@ type Friend = {
   color: string;
 };
 
-const SNEXT_VERSION = "0.2.4";
-const SNEXT_BUILD = "SteamGridDB completo + Spotify PKCE";
-const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:1420/callback";
+type SpotifyCallbackResponse = {
+  code: string;
+};
+
+const SNEXT_VERSION = "0.2.5";
+const SNEXT_BUILD = "Spotify callback nativo + SteamGridDB completo";
+const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:53127/callback";
 const SPOTIFY_SCOPES = [
   "user-read-currently-playing",
   "user-read-playback-state",
@@ -276,79 +282,6 @@ function App() {
       settings.dynamicBackgrounds,
     );
   }, [settings]);
-
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-    const error = url.searchParams.get("error");
-
-    if (error) {
-      window.history.replaceState({}, document.title, "/");
-      window.alert(`Spotify no pudo autorizar Snext: ${error}`);
-      return;
-    }
-
-    if (!code) {
-      return;
-    }
-
-    const verifier = localStorage.getItem("snext-spotify-code-verifier");
-    const expectedState = localStorage.getItem("snext-spotify-oauth-state");
-    if (!verifier || !expectedState || state !== expectedState) {
-      window.history.replaceState({}, document.title, "/");
-      window.alert("La respuesta de Spotify no coincide con esta sesión de Snext.");
-      return;
-    }
-
-    const exchangeCode = async () => {
-      const body = new URLSearchParams({
-        client_id: settings.spotifyClientId.trim(),
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: SPOTIFY_REDIRECT_URI,
-        code_verifier: verifier,
-      });
-
-      const response = await fetch("https://accounts.spotify.com/api/token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Spotify respondió ${response.status}`);
-      }
-
-      const tokenData = (await response.json()) as {
-        access_token?: string;
-        expires_in?: number;
-      };
-
-      if (!tokenData.access_token) {
-        throw new Error("Spotify no devolvió access_token.");
-      }
-
-      localStorage.removeItem("snext-spotify-code-verifier");
-      localStorage.removeItem("snext-spotify-oauth-state");
-      setSettings((currentSettings) => ({
-        ...currentSettings,
-        spotifyAccessToken: tokenData.access_token ?? "",
-        spotifyTokenExpiresAt:
-          Date.now() + Math.max(30, tokenData.expires_in ?? 3600) * 1000,
-      }));
-      window.history.replaceState({}, document.title, "/");
-    };
-
-    exchangeCode().catch((exchangeError) => {
-      window.history.replaceState({}, document.title, "/");
-      window.alert(
-        `No se pudo conectar Spotify. ${exchangeError instanceof Error ? exchangeError.message : String(exchangeError)}`,
-      );
-    });
-  }, [settings.spotifyClientId]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -570,7 +503,56 @@ function App() {
     url.searchParams.set("code_challenge", challenge);
     url.searchParams.set("state", state);
 
-    window.location.assign(url.toString());
+    try {
+      const callbackPromise = invoke<SpotifyCallbackResponse>("listen_spotify_callback", {
+        request: { state },
+      });
+      await openUrl(url.toString());
+      const { code } = await callbackPromise;
+
+      const body = new URLSearchParams({
+        client_id: clientId,
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: SPOTIFY_REDIRECT_URI,
+        code_verifier: verifier,
+      });
+
+      const response = await fetch("https://accounts.spotify.com/api/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Spotify respondió ${response.status}`);
+      }
+
+      const tokenData = (await response.json()) as {
+        access_token?: string;
+        expires_in?: number;
+      };
+
+      if (!tokenData.access_token) {
+        throw new Error("Spotify no devolvió access_token.");
+      }
+
+      localStorage.removeItem("snext-spotify-code-verifier");
+      localStorage.removeItem("snext-spotify-oauth-state");
+      setSettings((currentSettings) => ({
+        ...currentSettings,
+        spotifyAccessToken: tokenData.access_token ?? "",
+        spotifyTokenExpiresAt:
+          Date.now() + Math.max(30, tokenData.expires_in ?? 3600) * 1000,
+      }));
+      await refreshDashboard(false);
+    } catch (error) {
+      window.alert(
+        `No se pudo conectar Spotify. ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   };
 
   const disconnectSpotify = () => {
