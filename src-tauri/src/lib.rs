@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path, process::Command, thread, time::Duration};
 use sysinfo::{ProcessesToUpdate, System};
@@ -67,6 +68,30 @@ struct RetroAchievementsRequest {
     username: String,
     api_key: String,
     count: Option<u8>,
+}
+
+#[derive(Deserialize)]
+struct SteamGridRequest {
+    title: String,
+    api_key: String,
+}
+
+#[derive(Serialize)]
+struct SteamGridArtResponse {
+    hero_image: Option<String>,
+    cover_image: Option<String>,
+    logo: Option<String>,
+    matched_title: String,
+}
+
+#[derive(Deserialize)]
+struct RemoteImageRequest {
+    url: String,
+}
+
+#[derive(Serialize)]
+struct RemoteImageResponse {
+    data_url: String,
 }
 
 #[derive(Serialize)]
@@ -569,8 +594,11 @@ async fn fetch_retro_achievements(
         };
 
         let details_response = client
-            .get("https://retroachievements.org/API/API_GetGame.php")
-            .query(&[("i", game_id.to_string()), ("y", request.api_key.clone())])
+            .get("https://retroachievements.org/API/API_GetGameExtended.php")
+            .query(&[
+                ("i", game_id.to_string()),
+                ("y", request.api_key.clone()),
+            ])
             .send()
             .await
             .map_err(|error| error.to_string())?;
@@ -597,6 +625,195 @@ async fn fetch_retro_achievements(
     }
 
     Ok(enriched_games)
+}
+
+fn first_asset_url(data: &serde_json::Value) -> Option<String> {
+    data.get("data")?
+        .as_array()?
+        .iter()
+        .find_map(|asset| asset.get("url")?.as_str().map(str::to_string))
+}
+
+async fn steam_grid_json(
+    client: &reqwest::Client,
+    url: reqwest::Url,
+    api_key: &str,
+) -> Result<serde_json::Value, String> {
+    let response = client
+        .get(url)
+        .bearer_auth(api_key)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!("SteamGridDB respondió {}", response.status()));
+    }
+
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+fn steam_grid_url(path: &[&str]) -> Result<reqwest::Url, String> {
+    let mut url = reqwest::Url::parse("https://www.steamgriddb.com/api/v2/")
+        .map_err(|error| error.to_string())?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| "No se pudo construir la URL de SteamGridDB".to_string())?;
+        for segment in path {
+            segments.push(segment);
+        }
+    }
+    Ok(url)
+}
+
+#[tauri::command]
+async fn fetch_steam_grid_art(
+    request: SteamGridRequest,
+) -> Result<SteamGridArtResponse, String> {
+    let api_key = request
+        .api_key
+        .trim()
+        .strip_prefix("Bearer ")
+        .unwrap_or(request.api_key.trim());
+    let title = request.title.trim();
+    if api_key.is_empty() || title.is_empty() {
+        return Err("Faltan el título o la API key de SteamGridDB".into());
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("Snext/0.1 SteamGridDB integration")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let normalized_title = title
+        .split('(')
+        .next()
+        .unwrap_or(title)
+        .split('[')
+        .next()
+        .unwrap_or(title)
+        .trim();
+    let candidates = if normalized_title.eq_ignore_ascii_case(title) {
+        vec![title]
+    } else {
+        vec![title, normalized_title]
+    };
+
+    let mut game_id = None;
+    let mut matched_title = title.to_string();
+    for candidate in candidates {
+        let search = steam_grid_json(
+            &client,
+            steam_grid_url(&["search", "autocomplete", candidate])?,
+            api_key,
+        )
+        .await?;
+        if let Some(matches) = search.get("data").and_then(serde_json::Value::as_array) {
+            let selected = matches
+                .iter()
+                .find(|item| {
+                    item.get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|name| name.eq_ignore_ascii_case(candidate))
+                })
+                .or_else(|| matches.first());
+            if let Some(selected) = selected {
+                game_id = selected.get("id").and_then(serde_json::Value::as_u64);
+                matched_title = selected
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or(candidate)
+                    .to_string();
+            }
+        }
+        if game_id.is_some() {
+            break;
+        }
+    }
+
+    let game_id = game_id.ok_or_else(|| format!("SteamGridDB no encontró {title}"))?;
+    let id = game_id.to_string();
+    let heroes = steam_grid_json(
+        &client,
+        steam_grid_url(&["heroes", "game", &id])?,
+        api_key,
+    )
+    .await
+    .ok();
+    let grids = steam_grid_json(
+        &client,
+        steam_grid_url(&["grids", "game", &id])?,
+        api_key,
+    )
+    .await
+    .ok();
+    let logos = steam_grid_json(
+        &client,
+        steam_grid_url(&["logos", "game", &id])?,
+        api_key,
+    )
+    .await
+    .ok();
+
+    let hero_image = heroes.as_ref().and_then(first_asset_url);
+    let cover_image = grids.as_ref().and_then(first_asset_url);
+    let logo = logos.as_ref().and_then(first_asset_url);
+    if hero_image.is_none() && cover_image.is_none() && logo.is_none() {
+        return Err(format!("SteamGridDB no devolvió arte para {matched_title}"));
+    }
+
+    Ok(SteamGridArtResponse {
+        hero_image,
+        cover_image,
+        logo,
+        matched_title,
+    })
+}
+
+#[tauri::command]
+async fn fetch_remote_image(
+    request: RemoteImageRequest,
+) -> Result<RemoteImageResponse, String> {
+    let url = reqwest::Url::parse(request.url.trim()).map_err(|error| error.to_string())?;
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    let allowed = host == "media.retroachievements.org"
+        || host == "steamgriddb.com"
+        || host.ends_with(".steamgriddb.com");
+    if url.scheme() != "https" || !allowed {
+        return Err("El origen de la imagen no está permitido".into());
+    }
+
+    let response = reqwest::Client::new()
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("La imagen respondió {}", response.status()));
+    }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| value.starts_with("image/"))
+        .unwrap_or("image/png")
+        .to_string();
+    let bytes = response.bytes().await.map_err(|error| error.to_string())?;
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err("La imagen supera el límite de 10 MB".into());
+    }
+
+    Ok(RemoteImageResponse {
+        data_url: format!(
+            "data:{content_type};base64,{}",
+            BASE64_STANDARD.encode(bytes)
+        ),
+    })
 }
 
 #[tauri::command]
@@ -768,6 +985,8 @@ pub fn run() {
             generate_ai_tip,
             fetch_discord_presence,
             fetch_retro_achievements,
+            fetch_steam_grid_art,
+            fetch_remote_image,
             detect_active_game
         ])
         .run(tauri::generate_context!())

@@ -105,17 +105,11 @@ type OpenWeatherResponse = {
   };
 };
 
-type SteamGridDbSearchResponse = {
-  data?: Array<{
-    id: number;
-    name: string;
-  }>;
-};
-
-type SteamGridDbAssetResponse = {
-  data?: Array<{
-    url: string;
-  }>;
+type SteamGridArtResponse = {
+  hero_image?: string;
+  cover_image?: string;
+  logo?: string;
+  matched_title: string;
 };
 
 type RetroAchievementsRecentGame = {
@@ -712,57 +706,18 @@ async function loadSteamGridDbArt(
     return {};
   }
 
-  const headers = {
-    Accept: "application/json",
-    Authorization: `Bearer ${apiKey.trim().replace(/^Bearer\s+/i, "")}`,
-  };
-  const queryCandidates = [
-    game.title,
-    game.title.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim(),
-  ].filter((value, index, list) => value && list.indexOf(value) === index);
-  let gameId: number | undefined;
-
-  for (const query of queryCandidates) {
-    const searchResponse = await fetch(
-      `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(query)}`,
-      { headers },
-    );
-    if (searchResponse.ok) {
-      const search = (await searchResponse.json()) as SteamGridDbSearchResponse;
-      gameId = search.data?.find((item) =>
-        item.name.toLowerCase() === query.toLowerCase(),
-      )?.id ?? search.data?.[0]?.id;
-    }
-    if (gameId) break;
-  }
-
-  if (!gameId) {
-    return {};
-  }
-
-  const [heroesResponse, gridsResponse, logosResponse] = await Promise.all([
-    fetch(`https://www.steamgriddb.com/api/v2/heroes/game/${gameId}?dimensions=1920x620`, { headers }),
-    fetch(`https://www.steamgriddb.com/api/v2/grids/game/${gameId}?dimensions=600x900`, { headers }),
-    fetch(`https://www.steamgriddb.com/api/v2/logos/game/${gameId}`, { headers }),
-  ]);
-
-  const [heroes, grids, logos] = await Promise.all([
-    heroesResponse.ok
-      ? (heroesResponse.json() as Promise<SteamGridDbAssetResponse>)
-      : Promise.resolve({ data: [] }),
-    gridsResponse.ok
-      ? (gridsResponse.json() as Promise<SteamGridDbAssetResponse>)
-      : Promise.resolve({ data: [] }),
-    logosResponse.ok
-      ? (logosResponse.json() as Promise<SteamGridDbAssetResponse>)
-      : Promise.resolve({ data: [] }),
-  ]);
+  const art = await invoke<SteamGridArtResponse>("fetch_steam_grid_art", {
+    request: {
+      title: game.title,
+      api_key: apiKey,
+    },
+  });
 
   return {
-    heroImage: heroes.data?.[0]?.url ?? game.heroImage,
-    coverImage: grids.data?.[0]?.url ?? game.coverImage,
-    logo: logos.data?.[0]?.url,
-    ratingLabel: "Arte por SteamGridDB",
+    heroImage: art.hero_image ?? game.heroImage,
+    coverImage: art.cover_image ?? game.coverImage,
+    logo: art.logo,
+    ratingLabel: `Arte por SteamGridDB · ${art.matched_title}`,
   };
 }
 
@@ -776,8 +731,13 @@ async function enrichGameWithProviders(
       ...game,
       ...art,
     };
-  } catch {
-    return game;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("SteamGridDB art failed", error);
+    return {
+      ...game,
+      ratingLabel: `SteamGridDB sin arte · ${message}`,
+    };
   }
 }
 
@@ -832,7 +792,7 @@ async function loadRetroAchievements(
         game.NumPossibleAchievements ?? detailsData?.NumPossibleAchievements ?? apiAchievements.length ?? 30,
       );
       const unlocked = Math.max(0, game.NumAchieved ?? detailsData?.NumAchieved ?? apiAchievements.filter((item) => item.DateEarned).length);
-      const details: AchievementDetail[] = apiAchievements.slice(0, 40).map((item, detailIndex) => ({
+      const mappedDetails: AchievementDetail[] = apiAchievements.slice(0, 40).map((item, detailIndex) => ({
         id: String(item.ID ?? `${game.Title ?? "ra"}-${detailIndex}`),
         name: item.Title ?? `Logro ${detailIndex + 1}`,
         description: item.Description ?? "Sin descripción disponible.",
@@ -846,6 +806,15 @@ async function loadRetroAchievements(
           ? retroAchievementsMediaUrl(`${item.BadgeName}.png`, "Badge")
           : undefined,
       }));
+      const details: AchievementDetail[] = mappedDetails.length > 0
+        ? mappedDetails
+        : [{
+            id: `ra-${game.ID ?? game.GameID ?? index}-pending`,
+            name: "Detalles no disponibles",
+            description: "RetroAchievements devolvió el juego, pero no su catálogo de logros.",
+            unlocked: false,
+            points: 0,
+          }];
 
       return {
         id: `ra-${game.Title ?? index}`,
@@ -866,10 +835,35 @@ async function loadRetroAchievements(
       items,
       games: achievementGames,
     };
-  } catch {
+  } catch (error) {
+    console.error("RetroAchievements data failed", error);
+    const message = error instanceof Error ? error.message : String(error);
+    const errorAchievement: AchievementDetail = {
+      id: "ra-provider-error",
+      name: "Revisa RetroAchievements",
+      description: message,
+      unlocked: false,
+      points: 0,
+    };
     return {
-      items: fallbackAchievements,
-      games: fallbackAchievementGames,
+      items: [{
+        name: "RetroAchievements no disponible",
+        progress: 0,
+        source: "retroachievements",
+      }],
+      games: [{
+        id: "ra-provider-error",
+        title: "RetroAchievements no disponible",
+        platform: "RetroAchievements",
+        provider: "retroachievements",
+        image: "/demo/game/cover.svg",
+        heroImage: "/demo/game/hero.svg",
+        unlocked: 0,
+        total: 1,
+        points: 0,
+        recentAchievement: errorAchievement,
+        achievements: [errorAchievement],
+      }],
     };
   }
 }

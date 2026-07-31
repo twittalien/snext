@@ -4,6 +4,7 @@ import {
   Card,
   PlatformBadge,
   ProgressBar,
+  RemoteImage,
 } from "../../../components/ui";
 import { getPlatformInfo } from "../../../services/platformCatalog";
 import "./GameHero.css";
@@ -82,9 +83,10 @@ export function GameHero({
     >
       <div className="game-hero__frame">
         {hasHeroImage && (
-          <img
+          <RemoteImage
             className="game-hero__background"
             src={game.heroImage}
+            fallbackSrc="/demo/game/hero.svg"
             alt=""
           />
         )}
@@ -137,13 +139,17 @@ export function GameHero({
           <div className="game-hero__game-row">
             {hasCoverImage && (
               <div className="game-hero__cover game-hero__cover--image">
-                <img src={game.coverImage} alt={`${game.title} portada`} />
+                <RemoteImage
+                  src={game.coverImage}
+                  fallbackSrc="/demo/game/cover.svg"
+                  alt={`${game.title} portada`}
+                />
               </div>
             )}
 
             <div className="game-hero__identity">
               {game.logo ? (
-                <img
+                <RemoteImage
                   className="game-hero__logo"
                   src={game.logo}
                   alt={game.title}

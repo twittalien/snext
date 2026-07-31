@@ -4,6 +4,7 @@ import {
   Modal,
   PlatformBadge,
   ProgressBar,
+  RemoteImage,
 } from "../../../components/ui";
 import "./AchievementsCarousel.css";
 
@@ -136,10 +137,15 @@ export function AchievementsCarousel({
     );
   }
 
-  const recentAchievement =
+  const recentAchievement: AchievementDetail =
     currentGame.recentAchievement ??
     currentGame.achievements.find((achievement) => achievement.unlocked) ??
-    currentGame.achievements[0];
+    currentGame.achievements[0] ?? {
+      id: `${currentGame.id}-empty`,
+      name: "Sin detalles disponibles",
+      description: "El proveedor no devolvió información de logros.",
+      unlocked: false,
+    };
 
   return (
     <>
@@ -154,9 +160,10 @@ export function AchievementsCarousel({
           type="button"
           onClick={() => setSelectedGame(currentGame)}
         >
-          <img
+          <RemoteImage
             className="achievements-v2__background"
             src={currentGame.heroImage ?? currentGame.image ?? "/demo/game/hero.svg"}
+            fallbackSrc="/demo/game/hero.svg"
             alt=""
           />
           <span className="achievements-v2__wash" />
@@ -176,9 +183,10 @@ export function AchievementsCarousel({
 
             <span className="achievements-v2__main">
               <span className="achievements-v2__cover-wrap">
-                <img
+                <RemoteImage
                   className="achievements-v2__cover"
                   src={currentGame.image ?? "/demo/game/cover.svg"}
+                  fallbackSrc="/demo/game/cover.svg"
                   alt=""
                 />
               </span>
@@ -205,7 +213,7 @@ export function AchievementsCarousel({
             <span className="achievements-v2__recent">
               <span className="achievements-v2__badge">
                 {recentAchievement.image ? (
-                  <img src={recentAchievement.image} alt="" />
+                  <RemoteImage src={recentAchievement.image} alt="" />
                 ) : (
                   <b>{recentAchievement.unlocked ? "T" : "?"}</b>
                 )}
@@ -271,7 +279,11 @@ export function AchievementsCarousel({
         {selectedGame && (
           <div className="achievements-detail">
             <div className="achievements-detail__summary">
-              <img src={selectedGame.image ?? "/demo/game/cover.svg"} alt="" />
+              <RemoteImage
+                src={selectedGame.image ?? "/demo/game/cover.svg"}
+                fallbackSrc="/demo/game/cover.svg"
+                alt=""
+              />
               <div>
                 <ProgressBar
                   value={Math.round(
@@ -300,7 +312,7 @@ export function AchievementsCarousel({
                 >
                   <span>
                     {achievement.image ? (
-                      <img src={achievement.image} alt="" />
+                      <RemoteImage src={achievement.image} alt="" />
                     ) : (
                       <b>{achievement.hidden ? "?" : "T"}</b>
                     )}

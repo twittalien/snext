@@ -9,3 +9,4 @@ export { EmptyState } from "./EmptyState/EmptyState";
 export { Modal } from "./Modal/Modal";
 export { PlatformBadge } from "./PlatformBadge/PlatformBadge";
 export { ProgressBar } from "./ProgressBar/ProgressBar";
+export { RemoteImage } from "./RemoteImage/RemoteImage";
