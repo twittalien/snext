@@ -368,7 +368,12 @@
   display: grid;
   justify-items: end;
   gap: 0.15rem;
+  min-width: 6.5rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.7rem;
   text-align: right;
+  backdrop-filter: blur(0.45rem);
 }
 
 .weather-v2__clock strong {
@@ -377,8 +382,22 @@
   font-variant-numeric: tabular-nums;
 }
 
+.weather-v2__clock--light {
+  color: #ffffff;
+  background: rgba(8, 16, 39, 0.56);
+  text-shadow: 0 0.1rem 0.55rem rgba(0, 0, 0, 0.72);
+}
+
+.weather-v2__clock--dark {
+  color: #101b36;
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 0.05rem 0.25rem rgba(255, 255, 255, 0.7);
+}
+
 .weather-v2__clock span {
-  color: rgba(255, 255, 255, 0.68);
+  color: currentColor;
+  opacity: 0.76;
   font-size: var(--snext-text-xs);
 }
 

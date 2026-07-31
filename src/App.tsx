@@ -49,6 +49,10 @@ type Settings = {
   retroAchievementsApiKey: string;
   steamWebApiKey: string;
   steamGridDbApiKey: string;
+  screenScraperDevId: string;
+  screenScraperDevPassword: string;
+  screenScraperUser: string;
+  screenScraperPassword: string;
   weatherProvider: "open-meteo" | "openweathermap";
   openWeatherMapApiKey: string;
   weatherMotion: "full" | "reduced" | "off";
@@ -67,8 +71,8 @@ type Friend = {
   color: string;
 };
 
-const SNEXT_VERSION = "0.1.9";
-const SNEXT_BUILD = "Búsqueda tolerante + traducción corregida + ventana";
+const SNEXT_VERSION = "0.2.0";
+const SNEXT_BUILD = "ScreenScraper + traducción dual + reloj legible";
 
 const defaultSettings: Settings = {
   name: "twittalien",
@@ -91,6 +95,10 @@ const defaultSettings: Settings = {
   retroAchievementsApiKey: "",
   steamWebApiKey: "",
   steamGridDbApiKey: "",
+  screenScraperDevId: "",
+  screenScraperDevPassword: "",
+  screenScraperUser: "",
+  screenScraperPassword: "",
   weatherProvider: "open-meteo",
   openWeatherMapApiKey: "",
   weatherMotion: "full",
@@ -278,6 +286,10 @@ function App() {
       weatherProvider: settings.weatherProvider,
       openWeatherMapApiKey: settings.openWeatherMapApiKey,
       steamGridDbApiKey: settings.steamGridDbApiKey,
+      screenScraperDevId: settings.screenScraperDevId,
+      screenScraperDevPassword: settings.screenScraperDevPassword,
+      screenScraperUser: settings.screenScraperUser,
+      screenScraperPassword: settings.screenScraperPassword,
       retroAchievementsUser: settings.retroAchievementsUser,
       retroAchievementsApiKey: settings.retroAchievementsApiKey,
       spotifyAccessToken: settings.spotifyAccessToken,
@@ -302,6 +314,10 @@ function App() {
       settings.retroAchievementsUser,
       settings.spotifyAccessToken,
       settings.steamGridDbApiKey,
+      settings.screenScraperDevId,
+      settings.screenScraperDevPassword,
+      settings.screenScraperUser,
+      settings.screenScraperPassword,
       settings.weatherLocation,
       settings.weatherProvider,
     ],
@@ -813,7 +829,14 @@ function App() {
                 <details open>
                   <summary>Juego activo y SteamGridDB</summary>
                   <p>
-                    La detección se actualiza cada 10 segundos. Para arte real, crea una API key en SteamGridDB, pégala en Integraciones y usa el nombre exacto del juego. La tarjeta usa hero, logo y portada vertical; si SteamGridDB no encuentra coincidencia conserva el último fallback.
+                    La detección se actualiza cada 10 segundos. Snext normaliza puntuación, subtítulos y variantes del nombre antes de consultar SteamGridDB. Si no encuentra arte, usa ScreenScraper cuando hayas configurado ID y contraseña de desarrollador, más tu usuario y contraseña de ScreenScraper.
+                  </p>
+                </details>
+
+                <details>
+                  <summary>ScreenScraper</summary>
+                  <p>
+                    Regístrate en ScreenScraper.fr y solicita credenciales de desarrollador. Introduce el ID y la contraseña de desarrollador; también puedes añadir tu usuario y contraseña de ScreenScraper para aumentar los límites de consulta. Se usa automáticamente después de SteamGridDB.
                   </p>
                 </details>
 
@@ -1233,6 +1256,58 @@ function App() {
                       updateSetting("steamGridDbApiKey", event.target.value)
                     }
                     placeholder={t.notConfigured}
+                  />
+                </label>
+
+                <label>
+                  ScreenScraper developer ID
+
+                  <input
+                    value={settings.screenScraperDevId}
+                    onChange={(event) =>
+                      updateSetting("screenScraperDevId", event.target.value)
+                    }
+                    placeholder="Opcional: ID de desarrollador"
+                  />
+                </label>
+
+                <label>
+                  ScreenScraper developer password
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.screenScraperDevPassword}
+                    onChange={(event) =>
+                      updateSetting("screenScraperDevPassword", event.target.value)
+                    }
+                    placeholder="Opcional: contraseña de desarrollador"
+                  />
+                </label>
+
+                <label>
+                  ScreenScraper usuario
+
+                  <input
+                    value={settings.screenScraperUser}
+                    onChange={(event) =>
+                      updateSetting("screenScraperUser", event.target.value)
+                    }
+                    placeholder="Usuario ScreenScraper"
+                  />
+                </label>
+
+                <label>
+                  ScreenScraper contraseña
+
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.screenScraperPassword}
+                    onChange={(event) =>
+                      updateSetting("screenScraperPassword", event.target.value)
+                    }
+                    placeholder="Contraseña ScreenScraper"
                   />
                 </label>
 

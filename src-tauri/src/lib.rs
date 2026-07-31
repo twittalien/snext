@@ -76,12 +76,24 @@ struct SteamGridRequest {
     api_key: String,
 }
 
+#[derive(Deserialize)]
+struct ScreenScraperRequest {
+    title: String,
+    platform: String,
+    dev_id: String,
+    dev_password: String,
+    username: String,
+    password: String,
+    language: String,
+}
+
 #[derive(Serialize)]
 struct SteamGridArtResponse {
     hero_image: Option<String>,
     cover_image: Option<String>,
     logo: Option<String>,
     matched_title: String,
+    source: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -103,7 +115,10 @@ struct TranslationRequest {
 
 #[derive(Deserialize)]
 struct MyMemoryResponse {
+    #[serde(rename = "responseData")]
     response_data: Option<MyMemoryResponseData>,
+    #[serde(rename = "responseStatus")]
+    response_status: Option<u16>,
 }
 
 #[derive(Deserialize)]
@@ -530,6 +545,9 @@ async fn fetch_discord_presence(
         .json::<serde_json::Value>()
         .await
         .map_err(|error| error.to_string())?;
+    if data.response_status != Some(200) {
+        return Err("Los traductores externos no están disponibles temporalmente".into());
+    }
     let friends = data
         .as_array()
         .map(|members| members.iter())
@@ -704,6 +722,79 @@ fn steam_grid_match_score(target: &str, candidate: &str) -> usize {
     1 + missing * 3 + extra
 }
 
+fn json_u64(value: Option<&serde_json::Value>) -> Option<u64> {
+    value
+        .and_then(serde_json::Value::as_u64)
+        .or_else(|| value.and_then(serde_json::Value::as_str)?.parse().ok())
+}
+
+fn json_string_for_keys(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    match value {
+        serde_json::Value::Object(object) => {
+            for key in keys {
+                if let Some(text) = object.get(*key).and_then(serde_json::Value::as_str) {
+                    if !text.trim().is_empty() {
+                        return Some(text.to_string());
+                    }
+                }
+            }
+            object.values().find_map(|child| json_string_for_keys(child, keys))
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(|child| json_string_for_keys(child, keys)),
+        _ => None,
+    }
+}
+
+fn screen_scraper_media_url(
+    value: &serde_json::Value,
+    preferred_types: &[&str],
+) -> Option<String> {
+    match value {
+        serde_json::Value::Object(object) => {
+            let media_type = object
+                .get("type")
+                .or_else(|| object.get("nom"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if let Some(url) = object.get("url").and_then(serde_json::Value::as_str) {
+                if preferred_types.iter().any(|kind| media_type.contains(kind)) {
+                    return Some(url.to_string());
+                }
+            }
+            object.values().find_map(|child| screen_scraper_media_url(child, preferred_types))
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(|child| screen_scraper_media_url(child, preferred_types)),
+        _ => None,
+    }
+}
+
+fn screen_scraper_system_id(platform: &str) -> Option<&'static str> {
+    let platform = platform.to_ascii_lowercase();
+    if platform.contains("switch") || platform.contains("ryujinx") {
+        return Some("162");
+    }
+    if platform.contains("playstation 2") || platform.contains("pcsx2") {
+        return Some("58");
+    }
+    if platform.contains("playstation") || platform.contains("psx") {
+        return Some("57");
+    }
+    if platform.contains("gamecube") || platform.contains("dolphin") {
+        return Some("13");
+    }
+    if platform.contains("nintendo 64") || platform.contains("n64") {
+        return Some("14");
+    }
+    if platform.contains("super nintendo") || platform.contains("snes") {
+        return Some("6");
+    }
+    if platform.contains("nes") {
+        return Some("3");
+    }
+    None
+}
+
 fn steam_grid_title_candidates(title: &str) -> Vec<String> {
     let without_metadata = title
         .split('(')
@@ -809,12 +900,11 @@ async fn fetch_steam_grid_art(
                 .iter()
                 .filter_map(|item| {
                     let name = item.get("name")?.as_str()?;
-                    let id = item.get("id")?.as_u64()?;
+                    let id = json_u64(item.get("id"))?;
                     Some((id, name))
                 })
                 .min_by_key(|(_, name)| {
-                    let left = normalized_game_title(name);
-                    steam_grid_match_score(&candidate, name)
+                    steam_grid_match_score(title, name)
                 })
                 .map(|(id, name)| (id, name.to_string()));
             if let Some((id, name)) = selected {
@@ -879,6 +969,73 @@ async fn fetch_steam_grid_art(
         cover_image,
         logo,
         matched_title,
+        source: Some("SteamGridDB".into()),
+    })
+}
+
+#[tauri::command]
+async fn fetch_screen_scraper_art(
+    request: ScreenScraperRequest,
+) -> Result<SteamGridArtResponse, String> {
+    if request.dev_id.trim().is_empty()
+        || request.dev_password.trim().is_empty()
+        || request.title.trim().is_empty()
+    {
+        return Err("Faltan las credenciales o el título de ScreenScraper".into());
+    }
+
+    let mut url = reqwest::Url::parse("https://api.screenscraper.fr/api2/jeuInfos.php")
+        .map_err(|error| error.to_string())?;
+    {
+        let mut query = url.query_pairs_mut();
+        query
+            .append_pair("devid", request.dev_id.trim())
+            .append_pair("devpassword", request.dev_password.trim())
+            .append_pair("softname", "Snext")
+            .append_pair("output", "json")
+            .append_pair("romnom", request.title.trim())
+            .append_pair("langue", &request.language);
+        if let Some(system_id) = screen_scraper_system_id(&request.platform) {
+            query.append_pair("systemeid", system_id);
+        }
+        if !request.username.trim().is_empty() {
+            query.append_pair("ssid", request.username.trim());
+        }
+        if !request.password.trim().is_empty() {
+            query.append_pair("sspassword", request.password.trim());
+        }
+    }
+
+    let response = reqwest::Client::builder()
+        .user_agent("Snext/0.2 ScreenScraper integration")
+        .build()
+        .map_err(|error| error.to_string())?
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("ScreenScraper respondió {}", response.status()));
+    }
+    let data = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| error.to_string())?;
+    let matched_title = json_string_for_keys(&data, &["nom", "name", "title"])
+        .unwrap_or_else(|| request.title.trim().to_string());
+    let cover_image = screen_scraper_media_url(&data, &["box-2d", "box2d", "support"]);
+    let hero_image = screen_scraper_media_url(&data, &["fanart", "background", "mix", "screenshot"]);
+    let logo = screen_scraper_media_url(&data, &["wheel", "logo"]);
+    if cover_image.is_none() && hero_image.is_none() && logo.is_none() {
+        return Err(format!("ScreenScraper no devolvió arte para {matched_title}"));
+    }
+
+    Ok(SteamGridArtResponse {
+        hero_image,
+        cover_image,
+        logo,
+        matched_title,
+        source: Some("ScreenScraper".into()),
     })
 }
 
@@ -888,14 +1045,44 @@ async fn translate_text(request: TranslationRequest) -> Result<serde_json::Value
         return Ok(serde_json::json!({ "translated_text": request.text }));
     }
 
+    let client = reqwest::Client::new();
+    let mut google_url = reqwest::Url::parse("https://translate.googleapis.com/translate_a/single")
+        .map_err(|error| error.to_string())?;
+    google_url
+        .query_pairs_mut()
+        .append_pair("client", "gtx")
+        .append_pair("sl", &request.source_language)
+        .append_pair("tl", &request.target_language)
+        .append_pair("dt", "t")
+        .append_pair("q", &request.text);
+    if let Ok(response) = client.get(google_url).send().await {
+        if response.status().is_success() {
+            if let Ok(data) = response.json::<serde_json::Value>().await {
+                let translated = data
+                    .get(0)
+                    .and_then(serde_json::Value::as_array)
+                    .map(|segments| {
+                        segments
+                            .iter()
+                            .filter_map(|segment| segment.get(0).and_then(serde_json::Value::as_str))
+                            .collect::<String>()
+                    })
+                    .filter(|value| !value.trim().is_empty());
+                if let Some(translated) = translated {
+                    return Ok(serde_json::json!({ "translated_text": translated }));
+                }
+            }
+        }
+    }
+
     let mut url = reqwest::Url::parse("https://api.mymemory.translated.net/get")
         .map_err(|error| error.to_string())?;
     url.query_pairs_mut()
         .append_pair("q", &request.text)
         .append_pair("langpair", &format!("{}|{}", request.source_language, request.target_language));
-    let response = reqwest::Client::new()
+    let response = client
         .get(url)
-        .header("User-Agent", "Snext/0.1.9")
+        .header("User-Agent", "Snext/0.2.0")
         .send()
         .await
         .map_err(|error| error.to_string())?;
@@ -922,7 +1109,9 @@ async fn fetch_remote_image(
     let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
     let allowed = host == "media.retroachievements.org"
         || host == "steamgriddb.com"
-        || host.ends_with(".steamgriddb.com");
+        || host.ends_with(".steamgriddb.com")
+        || host == "screenscraper.fr"
+        || host.ends_with(".screenscraper.fr");
     if url.scheme() != "https" || !allowed {
         return Err("El origen de la imagen no está permitido".into());
     }
@@ -1126,6 +1315,7 @@ pub fn run() {
             fetch_discord_presence,
             fetch_retro_achievements,
             fetch_steam_grid_art,
+            fetch_screen_scraper_art,
             fetch_remote_image,
             detect_active_game,
             translate_text

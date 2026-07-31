@@ -179,6 +179,8 @@ export function WeatherCard({
     [locale, now],
   );
 
+  const clockTone = weather?.isDay ? "dark" : "light";
+
   if (!weather) {
     return (
       <Card
@@ -209,7 +211,7 @@ export function WeatherCard({
             </p>
           </div>
 
-          <div className="weather-v2__empty-time">
+          <div className="weather-v2__empty-time weather-v2__clock--light">
             <strong>{timeText}</strong>
             <span>{dateText}</span>
           </div>
@@ -249,7 +251,7 @@ export function WeatherCard({
             <strong>{weather.conditionLabel}</strong>
           </div>
 
-          <div className="weather-v2__clock">
+          <div className={`weather-v2__clock weather-v2__clock--${clockTone}`}>
             <strong>{timeText}</strong>
             <span>{dateText}</span>
           </div>

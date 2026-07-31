@@ -45,6 +45,10 @@ export type DashboardDataOptions = {
   weatherProvider: "open-meteo" | "openweathermap";
   openWeatherMapApiKey: string;
   steamGridDbApiKey: string;
+  screenScraperDevId: string;
+  screenScraperDevPassword: string;
+  screenScraperUser: string;
+  screenScraperPassword: string;
   retroAchievementsUser: string;
   retroAchievementsApiKey: string;
   spotifyAccessToken: string;
@@ -111,11 +115,14 @@ type SteamGridArtResponse = {
   cover_image?: string;
   logo?: string;
   matched_title: string;
+  source?: string;
 };
 
 type TranslationResponse = {
   translated_text: string;
 };
+
+const translationCache = new Map<string, Promise<string>>();
 
 type RetroAchievementsRecentGame = {
   ID?: number;
@@ -164,17 +171,21 @@ async function translateAchievementDescription(
 ): Promise<string> {
   if (language === "en" || !description.trim()) return description;
 
-  try {
-    return await invoke<TranslationResponse>("translate_text", {
+  const cacheKey = `${language}:${description}`;
+  const cached = translationCache.get(cacheKey);
+  if (cached) return cached;
+
+  const request = invoke<TranslationResponse>("translate_text", {
       request: {
         text: description,
         source_language: "en",
         target_language: language,
       },
-    }).then((response) => response.translated_text || description);
-  } catch {
-    return description;
-  }
+    })
+    .then((response) => response.translated_text || description)
+    .catch(() => description);
+  translationCache.set(cacheKey, request);
+  return request;
 }
 
 type SpotifyPlaybackResponse = {
@@ -730,7 +741,7 @@ async function loadSteamGridDbArt(
     return {};
   }
 
-  const art = await invoke<SteamGridArtResponse>("fetch_steam_grid_art", {
+    const art = await invoke<SteamGridArtResponse>("fetch_steam_grid_art", {
     request: {
       title: game.title,
       api_key: apiKey,
@@ -741,7 +752,39 @@ async function loadSteamGridDbArt(
     heroImage: art.hero_image ?? game.heroImage,
     coverImage: art.cover_image ?? game.coverImage,
     logo: art.logo,
-    ratingLabel: `Arte por SteamGridDB · ${art.matched_title}`,
+    ratingLabel: `Arte por ${art.source ?? "SteamGridDB"} · ${art.matched_title}`,
+  };
+}
+
+async function loadScreenScraperArt(
+  game: GameHeroData,
+  options: DashboardDataOptions,
+): Promise<Partial<GameHeroData>> {
+  if (
+    !options.screenScraperDevId.trim() ||
+    !options.screenScraperDevPassword.trim() ||
+    game.title === fallbackGame.title
+  ) {
+    return {};
+  }
+
+  const art = await invoke<SteamGridArtResponse>("fetch_screen_scraper_art", {
+    request: {
+      title: game.title,
+      platform: `${game.platform} ${game.source} ${game.platformHint ?? ""}`,
+      dev_id: options.screenScraperDevId,
+      dev_password: options.screenScraperDevPassword,
+      username: options.screenScraperUser,
+      password: options.screenScraperPassword,
+      language: options.language,
+    },
+  });
+
+  return {
+    heroImage: art.hero_image ?? game.heroImage,
+    coverImage: art.cover_image ?? game.coverImage,
+    logo: art.logo ?? game.logo,
+    ratingLabel: `Arte por ScreenScraper · ${art.matched_title}`,
   };
 }
 
@@ -751,17 +794,22 @@ async function enrichGameWithProviders(
 ): Promise<GameHeroData> {
   try {
     const art = await loadSteamGridDbArt(game, options.steamGridDbApiKey);
-    return {
-      ...game,
-      ...art,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("SteamGridDB art failed", error);
-    return {
-      ...game,
-      ratingLabel: `SteamGridDB sin arte · ${message}`,
-    };
+    return { ...game, ...art };
+  } catch (steamGridError) {
+    console.error("SteamGridDB art failed", steamGridError);
+    try {
+      const fallbackArt = await loadScreenScraperArt(game, options);
+      if (fallbackArt.heroImage || fallbackArt.coverImage || fallbackArt.logo) {
+        return { ...game, ...fallbackArt };
+      }
+    } catch (screenScraperError) {
+      console.error("ScreenScraper art failed", screenScraperError);
+    }
+
+    const message = steamGridError instanceof Error
+      ? steamGridError.message
+      : String(steamGridError);
+    return { ...game, ratingLabel: `Sin arte · ${message}` };
   }
 }
 
