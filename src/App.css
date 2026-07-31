@@ -701,6 +701,45 @@ main {
   border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 }
 
+.settings-content .version-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(53, 223, 240, 0.24);
+  border-radius: 0.45rem;
+  background: rgba(53, 223, 240, 0.07);
+}
+
+.version-panel div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.version-panel span,
+.version-panel small {
+  color: #9aa0b4;
+  font-size: 0.64rem;
+}
+
+.version-panel span {
+  font-weight: 850;
+}
+
+.version-panel strong {
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.version-panel b {
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.35rem;
+  color: #07151a;
+  background: #55e6ef;
+  font-size: 0.72rem;
+}
+
 .setup-guide {
   color: #d9dbea;
 }

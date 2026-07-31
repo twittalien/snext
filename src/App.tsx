@@ -66,6 +66,9 @@ type Friend = {
   color: string;
 };
 
+const SNEXT_VERSION = "0.1.7";
+const SNEXT_BUILD = "Arte nativo + diagnóstico";
+
 const defaultSettings: Settings = {
   name: "twittalien",
   language: "es",
@@ -726,6 +729,51 @@ function App() {
             </header>
 
             <div className="settings-content">
+              <section className="version-panel" aria-label="Versión de Snext">
+                <div>
+                  <span>VERSIÓN INSTALADA</span>
+                  <strong>Snext v{SNEXT_VERSION}</strong>
+                  <small>{SNEXT_BUILD}</small>
+                </div>
+                <b>v{SNEXT_VERSION}</b>
+              </section>
+
+              <section className="art-diagnostics">
+                <div className="art-diagnostics__heading">
+                  <div>
+                    <h3>Diagnóstico de arte</h3>
+                    <p className="hint">
+                      Prueba las APIs, la descarga nativa y el renderizado sin mostrar tus claves.
+                    </p>
+                  </div>
+                  <button
+                    className="diagnostic-action"
+                    type="button"
+                    disabled={artDiagnosticsRunning}
+                    onClick={diagnoseArt}
+                  >
+                    {artDiagnosticsRunning ? "Probando..." : "Ejecutar"}
+                  </button>
+                </div>
+
+                {artDiagnostics.length > 0 && (
+                  <div className="art-diagnostics__results">
+                    {artDiagnostics.map((step) => (
+                      <article
+                        className={`art-diagnostic art-diagnostic--${step.status}`}
+                        key={step.id}
+                      >
+                        {step.preview && <img src={step.preview} alt="" />}
+                        <div>
+                          <strong>{step.label}</strong>
+                          <p>{step.detail}</p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
               <section className="setup-guide">
                 <h3>Guía rápida de tarjetas</h3>
                 <p className="hint">
@@ -1254,42 +1302,6 @@ function App() {
                     placeholder="Servidor de Discord"
                   />
                 </label>
-              </section>
-
-              <section className="art-diagnostics">
-                <div className="art-diagnostics__heading">
-                  <div>
-                    <h3>Diagnóstico de arte</h3>
-                    <p className="hint">
-                      Prueba las APIs, la descarga nativa y el renderizado sin mostrar tus claves.
-                    </p>
-                  </div>
-                  <button
-                    className="diagnostic-action"
-                    type="button"
-                    disabled={artDiagnosticsRunning}
-                    onClick={diagnoseArt}
-                  >
-                    {artDiagnosticsRunning ? "Probando..." : "Ejecutar"}
-                  </button>
-                </div>
-
-                {artDiagnostics.length > 0 && (
-                  <div className="art-diagnostics__results">
-                    {artDiagnostics.map((step) => (
-                      <article
-                        className={`art-diagnostic art-diagnostic--${step.status}`}
-                        key={step.id}
-                      >
-                        {step.preview && <img src={step.preview} alt="" />}
-                        <div>
-                          <strong>{step.label}</strong>
-                          <p>{step.detail}</p>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
               </section>
 
               <section>

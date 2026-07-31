@@ -558,11 +558,13 @@ async fn fetch_retro_achievements(
         .map_err(|error| error.to_string())?;
 
     let count = request.count.unwrap_or(8).min(50).to_string();
+    let username = request.username.trim().to_string();
+    let api_key = request.api_key.trim().to_string();
     let recent_response = client
         .get("https://retroachievements.org/API/API_GetUserRecentlyPlayedGames.php")
         .query(&[
-            ("u", request.username.trim()),
-            ("y", request.api_key.trim()),
+            ("u", username.as_str()),
+            ("y", api_key.as_str()),
             ("c", count.as_str()),
         ])
         .send()
@@ -597,8 +599,8 @@ async fn fetch_retro_achievements(
             .get("https://retroachievements.org/API/API_GetGameInfoAndUserProgress.php")
             .query(&[
                 ("g", game_id.to_string()),
-                ("u", request.username.clone()),
-                ("y", request.api_key.clone()),
+                ("u", username.clone()),
+                ("y", api_key.clone()),
                 ("a", "1".to_string()),
             ])
             .send()

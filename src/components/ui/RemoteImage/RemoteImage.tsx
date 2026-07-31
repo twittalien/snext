@@ -39,9 +39,7 @@ export function RemoteImage({
   onError,
   ...props
 }: RemoteImageProps) {
-  const [resolvedSrc, setResolvedSrc] = useState(
-    isRemoteSource(src) ? fallbackSrc : src,
-  );
+  const [resolvedSrc, setResolvedSrc] = useState(src ?? fallbackSrc);
 
   useEffect(() => {
     let active = true;
@@ -59,14 +57,14 @@ export function RemoteImage({
       };
     }
 
-    setResolvedSrc(fallbackSrc);
+    // Let WebKit try HTTPS immediately while Tauri downloads a local data URL.
+    // Either path can succeed independently on different Bazzite installations.
+    setResolvedSrc(src);
     loadRemoteSource(src)
       .then((dataUrl) => {
         if (active) setResolvedSrc(dataUrl);
       })
-      .catch(() => {
-        if (active) setResolvedSrc(fallbackSrc);
-      });
+      .catch(() => undefined);
 
     return () => {
       active = false;
