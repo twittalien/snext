@@ -567,6 +567,15 @@ fn detect_active_game() -> ActiveGame {
         "chrome",
         "chromium",
         "webkit",
+        "cgamepadapi",
+        "gameoverlayui",
+        "steamwebhelper",
+        "steamservice",
+        "steam-runtime",
+        "pressure-vessel",
+        "srt-bwrap",
+        "es-de",
+        "squashfuse",
     ];
     const GAME_HINTS: &[&str] = &[
         "game",

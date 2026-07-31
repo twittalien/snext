@@ -1,5 +1,6 @@
 import {
   type ChangeEvent,
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -238,12 +239,13 @@ function App() {
         ? "pt-BR"
         : "es-MX";
 
-  useEffect(() => {
-    let active = true;
+  const refreshDashboard = useCallback(
+    async (showLoading = false) => {
+      if (showLoading) {
+        setDataLoading(true);
+      }
 
-    setDataLoading(true);
-
-    loadDashboardData(settings.weatherLocation, locale, {
+      const data = await loadDashboardData(settings.weatherLocation, locale, {
       weatherProvider: settings.weatherProvider,
       openWeatherMapApiKey: settings.openWeatherMapApiKey,
       steamGridDbApiKey: settings.steamGridDbApiKey,
@@ -253,34 +255,48 @@ function App() {
       discordMode: settings.discordMode,
       discordBotToken: settings.discordBotToken,
       discordGuildId: settings.discordGuildId,
-    })
-      .then((data) => {
-        if (active) {
-          setDashboardData(data);
-        }
-      })
-      .finally(() => {
-        if (active) {
+      });
+
+      setDashboardData(data);
+
+      if (showLoading) {
+        setDataLoading(false);
+      }
+    },
+    [
+      locale,
+      settings.discordBotToken,
+      settings.discordGuildId,
+      settings.discordMode,
+      settings.openWeatherMapApiKey,
+      settings.retroAchievementsApiKey,
+      settings.retroAchievementsUser,
+      settings.spotifyAccessToken,
+      settings.steamGridDbApiKey,
+      settings.weatherLocation,
+      settings.weatherProvider,
+    ],
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    const load = (showLoading = false) => {
+      refreshDashboard(showLoading).catch(() => {
+        if (active && showLoading) {
           setDataLoading(false);
         }
       });
+    };
+
+    load(true);
+    const timer = window.setInterval(() => load(false), 10000);
 
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
-  }, [
-    locale,
-    settings.openWeatherMapApiKey,
-    settings.retroAchievementsApiKey,
-    settings.retroAchievementsUser,
-    settings.spotifyAccessToken,
-    settings.steamGridDbApiKey,
-    settings.weatherLocation,
-    settings.weatherProvider,
-    settings.discordMode,
-    settings.discordBotToken,
-    settings.discordGuildId,
-  ]);
+  }, [refreshDashboard]);
 
   useEffect(() => {
     if (!dashboardData?.game) {
