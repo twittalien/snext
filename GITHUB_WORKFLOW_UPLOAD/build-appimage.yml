@@ -1,0 +1,76 @@
+name: Crear AppImage de Snext
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    name: AppImage para Bazzite
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Obtener codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Instalar dependencias de Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Instalar dependencias del proyecto
+        run: npm ci
+
+      - name: Empaquetar AppImage
+        run: npm run bundle:appimage
+
+      - name: Leer version de la aplicacion
+        id: version
+        run: echo "value=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Guardar AppImage descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Snext-AppImage-${{ github.run_number }}
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publicar AppImage para descarga directa
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          TAG="v${VERSION}"
+          APPIMAGE="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          ASSET="Snext-${VERSION}-x86_64.AppImage"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APPIMAGE#$ASSET" --clobber
+          else
+            gh release create "$TAG" "$APPIMAGE#$ASSET" --title "Snext v${VERSION}" --generate-notes
+          fi
