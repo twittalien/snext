@@ -754,6 +754,12 @@ async function loadActiveGame(): Promise<GameHeroData> {
   return {
     ...fallbackGame,
     title: activeGame.name,
+    // A detected game must not inherit the demo artwork. Providers and the
+    // local fallback below can then reliably tell that art is still missing.
+    heroImage: undefined,
+    heroImages: undefined,
+    coverImage: undefined,
+    logo: undefined,
     platform: getPlatformInfo(
       `${activeGame.name} ${activeGame.source} ${activeGame.metadata_hint}`,
     ).name,
@@ -865,6 +871,36 @@ async function loadScreenScraperArt(
   };
 }
 
+async function loadPublicGameArt(
+  game: GameHeroData,
+  language: DashboardDataOptions["language"],
+): Promise<Partial<GameHeroData>> {
+  if (game.title === fallbackGame.title) {
+    return {};
+  }
+
+  const art = await invoke<SteamGridArtResponse>("fetch_public_game_art", {
+    request: {
+      title: game.title,
+      platform: game.platform,
+      language,
+    },
+  });
+  return {
+    heroImages:
+      art.hero_images && art.hero_images.length > 0
+        ? art.hero_images
+        : art.hero_image
+          ? [art.hero_image]
+          : game.heroImages,
+    heroImage: art.hero_image ?? game.heroImage,
+    coverImage: art.cover_image ?? game.coverImage,
+    logo: art.logo ?? game.logo,
+    description: art.description ?? game.description,
+    ratingLabel: `Arte por ${art.source ?? "Snext"} · ${art.matched_title}`,
+  };
+}
+
 function isProviderDescription(description: string, originalDescription: string) {
   return (
     description !== originalDescription &&
@@ -954,6 +990,15 @@ async function enrichGameWithProviders(
     }
   } catch (screenScraperError) {
     console.error("ScreenScraper art failed", screenScraperError);
+  }
+
+  if (!resolvedGame.heroImage && !resolvedGame.coverImage) {
+    try {
+      const publicArt = await loadPublicGameArt(game, options.language);
+      resolvedGame = fillMissingGameArt(resolvedGame, game, publicArt);
+    } catch (publicArtError) {
+      console.error("Public game art failed", publicArtError);
+    }
   }
 
   return resolvedGame;

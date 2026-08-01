@@ -118,6 +118,13 @@ struct EsDeArtRequest {
     metadata_hint: String,
 }
 
+#[derive(Deserialize)]
+struct PublicGameArtRequest {
+    title: String,
+    platform: String,
+    language: String,
+}
+
 #[derive(Serialize)]
 struct SteamGridArtResponse {
     hero_image: Option<String>,
@@ -927,11 +934,15 @@ fn find_local_media_file(root: &Path, file_name: &str) -> Option<PathBuf> {
 
 fn local_media_roots() -> Vec<PathBuf> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/var/home/osanchez".into());
+    let cache_root = std::env::var("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(&home).join(".cache"));
     [
         PathBuf::from(&home).join("ES-DE"),
         PathBuf::from(&home).join("Emulation"),
         PathBuf::from(&home).join(".emulationstation"),
         PathBuf::from(&home).join(".local/share/snext"),
+        cache_root.join("snext"),
     ]
     .into_iter()
     .collect()
@@ -968,8 +979,230 @@ fn image_content_type(path: &Path) -> &'static str {
         "png" => "image/png",
         "webp" => "image/webp",
         "gif" => "image/gif",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
         "svg" => "image/svg+xml",
         _ => "image/png",
+    }
+}
+
+fn game_art_cache_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/var/home/osanchez".into());
+    std::env::var("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(home).join(".cache"))
+        .join("snext")
+        .join("game-art")
+}
+
+fn safe_art_cache_key(title: &str) -> String {
+    let normalized = normalized_game_title(title);
+    if normalized.is_empty() {
+        "unknown-game".into()
+    } else {
+        normalized.replace(' ', "-")
+    }
+}
+
+fn cache_file_extension(path: &Path) -> &str {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .filter(|extension| !extension.is_empty())
+        .unwrap_or("img")
+}
+
+fn cached_game_art_url(title: &str, role: &str, index: usize) -> Option<String> {
+    let cache_dir = game_art_cache_dir();
+    let prefix = format!("{}-{}-{}.", safe_art_cache_key(title), role, index);
+    fs::read_dir(cache_dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(&prefix))
+        })
+        .and_then(|path| path_to_file_url(&path))
+}
+
+fn cache_local_game_art(source: &Path, title: &str, role: &str, index: usize) -> Option<String> {
+    if !source.is_file() || !allowed_local_media_path(source) {
+        return None;
+    }
+    let cache_dir = game_art_cache_dir();
+    fs::create_dir_all(&cache_dir).ok()?;
+    let file_name = format!(
+        "{}-{}-{}.{}",
+        safe_art_cache_key(title),
+        role,
+        index,
+        cache_file_extension(source)
+    );
+    let target = cache_dir.join(file_name);
+    if source != target {
+        fs::copy(source, &target).ok()?;
+    }
+    path_to_file_url(&target)
+}
+
+fn cache_local_asset_url(url: &str, title: &str, role: &str, index: usize) -> Option<String> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    if parsed.scheme() != "file" {
+        return Some(url.to_string());
+    }
+    let source = parsed.to_file_path().ok()?;
+    cache_local_game_art(&source, title, role, index)
+}
+
+fn cache_local_art_response(response: &mut SteamGridArtResponse, title: &str) {
+    if let Some(url) = response.cover_image.clone() {
+        if let Some(cached) = cache_local_asset_url(&url, title, "cover", 0) {
+            response.cover_image = Some(cached);
+        }
+    }
+    if let Some(url) = response.logo.clone() {
+        if let Some(cached) = cache_local_asset_url(&url, title, "logo", 0) {
+            response.logo = Some(cached);
+        }
+    }
+    let original_heroes = response.hero_images.clone();
+    let original_hero = response.hero_image.clone();
+    let cached_heroes: Vec<String> = original_heroes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, url)| cache_local_asset_url(url, title, "hero", index))
+        .collect();
+    if cached_heroes.is_empty() {
+        response.hero_images = original_heroes;
+        response.hero_image = original_hero.as_deref().and_then(|url| {
+            cache_local_asset_url(url, title, "hero", 0).or_else(|| Some(url.to_string()))
+        });
+    } else {
+        response.hero_images = cached_heroes;
+        response.hero_image = response.hero_images.first().cloned();
+    }
+}
+
+fn remote_game_art_host_allowed(url: &reqwest::Url) -> bool {
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    host == "steamgriddb.com"
+        || host.ends_with(".steamgriddb.com")
+        || (host == "s3.amazonaws.com" && url.path().starts_with("/steamgriddb/"))
+        || host == "screenscraper.fr"
+        || host.ends_with(".screenscraper.fr")
+        || host.ends_with(".wikipedia.org")
+        || host.ends_with(".wikimedia.org")
+}
+
+fn remote_image_extension(content_type: &str, url: &reqwest::Url) -> &str {
+    if content_type.contains("png") {
+        "png"
+    } else if content_type.contains("webp") {
+        "webp"
+    } else if content_type.contains("gif") {
+        "gif"
+    } else if content_type.contains("avif") {
+        "avif"
+    } else if content_type.contains("jpeg") || content_type.contains("jpg") {
+        "jpg"
+    } else {
+        url.path()
+            .rsplit('.')
+            .next()
+            .filter(|extension| matches!(*extension, "jpg" | "jpeg" | "png" | "webp" | "gif" | "avif"))
+            .unwrap_or("img")
+    }
+}
+
+async fn cache_remote_game_art(
+    client: &reqwest::Client,
+    source_url: &str,
+    title: &str,
+    role: &str,
+    index: usize,
+) -> Option<String> {
+    if let Some(cached) = cached_game_art_url(title, role, index) {
+        return Some(cached);
+    }
+    let parsed = reqwest::Url::parse(source_url).ok()?;
+    if parsed.scheme() == "file" {
+        return cache_local_asset_url(source_url, title, role, index);
+    }
+    if parsed.scheme() != "https" || !remote_game_art_host_allowed(&parsed) {
+        return None;
+    }
+    let response = client.get(parsed.clone()).send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !content_type.starts_with("image/") {
+        return None;
+    }
+    if response.content_length().is_some_and(|length| length > 12 * 1024 * 1024) {
+        return None;
+    }
+    let bytes = response.bytes().await.ok()?;
+    if bytes.is_empty() || bytes.len() > 12 * 1024 * 1024 {
+        return None;
+    }
+    let cache_dir = game_art_cache_dir();
+    fs::create_dir_all(&cache_dir).ok()?;
+    let target = cache_dir.join(format!(
+        "{}-{}-{}.{}",
+        safe_art_cache_key(title),
+        role,
+        index,
+        remote_image_extension(&content_type, &parsed)
+    ));
+    fs::write(&target, bytes).ok()?;
+    path_to_file_url(&target)
+}
+
+async fn cache_remote_art_response(
+    response: &mut SteamGridArtResponse,
+    client: &reqwest::Client,
+    title: &str,
+) {
+    if let Some(url) = response.cover_image.clone() {
+        if let Some(cached) = cache_remote_game_art(client, &url, title, "cover", 0).await {
+            response.cover_image = Some(cached);
+        }
+    }
+    if let Some(url) = response.logo.clone() {
+        if let Some(cached) = cache_remote_game_art(client, &url, title, "logo", 0).await {
+            response.logo = Some(cached);
+        }
+    }
+    let original_heroes = response.hero_images.clone();
+    let original_hero = response.hero_image.clone();
+    let mut cached_heroes = Vec::new();
+    for (index, url) in original_heroes.iter().enumerate() {
+        if let Some(cached) = cache_remote_game_art(client, &url, title, "hero", index).await {
+            push_unique_url(&mut cached_heroes, cached);
+        }
+    }
+    if cached_heroes.is_empty() {
+        if let Some(url) = response.hero_image.clone() {
+            if let Some(cached) = cache_remote_game_art(client, &url, title, "hero", 0).await {
+                cached_heroes.push(cached);
+            }
+        }
+    }
+    if cached_heroes.is_empty() {
+        response.hero_images = original_heroes;
+        response.hero_image = original_hero;
+    } else {
+        response.hero_images = cached_heroes;
+        response.hero_image = response.hero_images.first().cloned();
     }
 }
 
@@ -1041,6 +1274,123 @@ fn resolve_es_de_media_path(gamelist_path: &Path, raw_value: &str) -> Option<Str
     .into_iter()
     .find_map(|root| find_local_media_file(&root, file_name))
     .and_then(|candidate| path_to_file_url(&candidate))
+}
+
+fn is_supported_image_path(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "avif"
+    )
+}
+
+fn es_de_title_match_score(path: &Path, normalized_title: &str) -> usize {
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .map(normalized_game_title)
+        .unwrap_or_default();
+    if stem.is_empty() || normalized_title.is_empty() {
+        return 0;
+    }
+    if stem == normalized_title {
+        return 220;
+    }
+    if stem.contains(normalized_title) || normalized_title.contains(&stem) {
+        return 160;
+    }
+    let matched_words = normalized_title
+        .split_whitespace()
+        .filter(|word| word.len() > 2 && stem.contains(word))
+        .count();
+    if matched_words >= 2 {
+        75 + matched_words * 12
+    } else {
+        0
+    }
+}
+
+fn collect_es_de_media_by_title(system: &str, title: &str) -> (Option<PathBuf>, Vec<PathBuf>, Option<PathBuf>) {
+    let normalized_title = normalized_game_title(title);
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/var/home/osanchez".into());
+    let roots = [
+        PathBuf::from(&home).join("ES-DE/downloaded_media").join(system),
+        PathBuf::from(&home).join("ES-DE/media").join(system),
+        PathBuf::from(&home).join("Emulation/tools/downloaded_media").join(system),
+    ];
+    let mut covers: Vec<(usize, PathBuf)> = Vec::new();
+    let mut heroes: Vec<(usize, PathBuf)> = Vec::new();
+    let mut logos: Vec<(usize, PathBuf)> = Vec::new();
+    let mut visited = 0usize;
+
+    for root in roots {
+        if !root.is_dir() {
+            continue;
+        }
+        let mut pending = vec![(root, 0usize)];
+        while let Some((directory, depth)) = pending.pop() {
+            if depth > 7 || visited >= 40_000 {
+                continue;
+            }
+            let Ok(entries) = fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                visited += 1;
+                let path = entry.path();
+                if path.is_dir() {
+                    pending.push((path, depth + 1));
+                    continue;
+                }
+                if !path.is_file() || !is_supported_image_path(&path) {
+                    continue;
+                }
+                let score = es_de_title_match_score(&path, &normalized_title);
+                if score == 0 {
+                    continue;
+                }
+                let location = path.to_string_lossy().to_ascii_lowercase();
+                if location.contains("marquee") || location.contains("wheel") || location.contains("logo") {
+                    logos.push((score + 80, path));
+                } else if location.contains("fanart")
+                    || location.contains("background")
+                    || location.contains("screenshot")
+                    || location.contains("titleshot")
+                    || location.contains("backdrop")
+                {
+                    heroes.push((score + 70, path));
+                } else if location.contains("cover")
+                    || location.contains("box")
+                    || location.contains("image")
+                    || location.contains("miximage")
+                {
+                    covers.push((score + 60, path));
+                } else {
+                    covers.push((score, path.clone()));
+                    heroes.push((score, path));
+                }
+            }
+        }
+    }
+
+    covers.sort_by(|left, right| right.0.cmp(&left.0));
+    heroes.sort_by(|left, right| right.0.cmp(&left.0));
+    logos.sort_by(|left, right| right.0.cmp(&left.0));
+    let cover = covers.first().map(|(_, path)| path.clone());
+    let mut hero_paths = Vec::new();
+    for (_, path) in heroes {
+        if !hero_paths.iter().any(|existing| existing == &path) {
+            hero_paths.push(path);
+        }
+        if hero_paths.len() == 3 {
+            break;
+        }
+    }
+    let logo = logos.first().map(|(_, path)| path.clone());
+    (cover, hero_paths, logo)
 }
 
 fn es_de_gamelist_paths() -> Vec<PathBuf> {
@@ -1165,10 +1515,10 @@ fn fetch_es_de_art(request: EsDeArtRequest) -> Result<SteamGridArtResponse, Stri
 
     let matched_title = xml_tag_value(&entry, "name").unwrap_or_else(|| title.to_string());
     let description = xml_tag_value(&entry, "desc");
-    let cover_image = xml_tag_value(&entry, "image")
+    let mut cover_image = xml_tag_value(&entry, "image")
         .or_else(|| xml_tag_value(&entry, "thumbnail"))
         .and_then(|value| resolve_es_de_media_path(&gamelist_path, &value));
-    let logo = xml_tag_value(&entry, "marquee")
+    let mut logo = xml_tag_value(&entry, "marquee")
         .and_then(|value| resolve_es_de_media_path(&gamelist_path, &value));
     let hero_candidates = [
         xml_tag_value(&entry, "fanart"),
@@ -1183,13 +1533,33 @@ fn fetch_es_de_art(request: EsDeArtRequest) -> Result<SteamGridArtResponse, Stri
             push_unique_url(&mut hero_images, url);
         }
     }
+    if cover_image.is_none() || hero_images.is_empty() || logo.is_none() {
+        let system = gamelist_path
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        let (discovered_cover, discovered_heroes, discovered_logo) =
+            collect_es_de_media_by_title(system, &matched_title);
+        if cover_image.is_none() {
+            cover_image = discovered_cover.and_then(|path| path_to_file_url(&path));
+        }
+        if logo.is_none() {
+            logo = discovered_logo.and_then(|path| path_to_file_url(&path));
+        }
+        for path in discovered_heroes {
+            if let Some(url) = path_to_file_url(&path) {
+                push_unique_url(&mut hero_images, url);
+            }
+        }
+    }
     let hero_image = hero_images.first().cloned();
 
     if cover_image.is_none() && hero_image.is_none() && logo.is_none() && description.is_none() {
         return Err(format!("ES-DE encontró {matched_title}, pero sin arte ni descripción"));
     }
 
-    Ok(SteamGridArtResponse {
+    let mut response = SteamGridArtResponse {
         hero_image,
         hero_images,
         cover_image,
@@ -1197,7 +1567,9 @@ fn fetch_es_de_art(request: EsDeArtRequest) -> Result<SteamGridArtResponse, Stri
         description,
         matched_title,
         source: Some("ES-DE local".into()),
-    })
+    };
+    cache_local_art_response(&mut response, title);
+    Ok(response)
 }
 
 fn steam_grid_title_candidates(title: &str) -> Vec<String> {
@@ -1595,6 +1967,123 @@ async fn wikipedia_description(
     json_string_value(data.get("extract"))
 }
 
+async fn wikipedia_image(
+    client: &reqwest::Client,
+    title: &str,
+    language: &str,
+) -> Option<String> {
+    let host_language = match language {
+        "en" => "en",
+        "pt" => "pt",
+        _ => "es",
+    };
+    let mut url = reqwest::Url::parse(&format!(
+        "https://{host_language}.wikipedia.org/api/rest_v1/page/summary/"
+    ))
+    .ok()?;
+    url.path_segments_mut().ok()?.push(title);
+    let data = client
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .ok()?
+        .json::<serde_json::Value>()
+        .await
+        .ok()?;
+    data.get("originalimage")
+        .and_then(|value| value.get("source"))
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            data.get("thumbnail")
+                .and_then(|value| value.get("source"))
+                .and_then(serde_json::Value::as_str)
+        })
+        .map(str::to_string)
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+fn create_generated_game_art(title: &str, platform: &str) -> Option<String> {
+    let cache_dir = game_art_cache_dir();
+    fs::create_dir_all(&cache_dir).ok()?;
+    let target = cache_dir.join(format!("{}-fallback.svg", safe_art_cache_key(title)));
+    let display_title = xml_escape(title);
+    let display_platform = xml_escape(platform);
+    let svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#11192f"/><stop offset="0.55" stop-color="#3b246f"/><stop offset="1" stop-color="#0e7186"/></linearGradient></defs>
+<rect width="1200" height="630" fill="url(#bg)"/><circle cx="910" cy="165" r="125" fill="#46d9ef" fill-opacity=".25"/><circle cx="1030" cy="470" r="190" fill="#9c6bff" fill-opacity=".22"/>
+<text x="76" y="110" fill="#5eeaff" font-family="sans-serif" font-size="25" font-weight="700" letter-spacing="4">SNEXT · ARTE LOCAL</text>
+<text x="76" y="292" fill="white" font-family="sans-serif" font-size="78" font-weight="800">{display_title}</text>
+<text x="76" y="360" fill="#c6d2e9" font-family="sans-serif" font-size="31">{display_platform}</text>
+</svg>"#
+    );
+    fs::write(&target, svg).ok()?;
+    path_to_file_url(&target)
+}
+
+#[tauri::command]
+async fn fetch_public_game_art(
+    request: PublicGameArtRequest,
+) -> Result<SteamGridArtResponse, String> {
+    let title = request.title.trim();
+    if title.is_empty() {
+        return Err("Falta el título del juego".into());
+    }
+    let client = reqwest::Client::builder()
+        .user_agent("Snext/0.3 public game art")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut description = None;
+    let mut image = None;
+    for language in [request.language.as_str(), "en"] {
+        for candidate in wikipedia_title_candidates(title, title) {
+            if description.is_none() {
+                description = wikipedia_description(&client, &candidate, language).await;
+            }
+            if image.is_none() {
+                image = wikipedia_image(&client, &candidate, language).await;
+            }
+            if image.is_some() && description.is_some() {
+                break;
+            }
+        }
+        if image.is_some() && description.is_some() {
+            break;
+        }
+    }
+
+    let mut response = SteamGridArtResponse {
+        hero_image: image.clone(),
+        hero_images: image.into_iter().collect(),
+        cover_image: None,
+        logo: None,
+        description,
+        matched_title: title.to_string(),
+        source: Some("Wikimedia".into()),
+    };
+    cache_remote_art_response(&mut response, &client, title).await;
+    if response.hero_image.is_none() && response.cover_image.is_none() {
+        let fallback = create_generated_game_art(title, &request.platform)
+            .ok_or_else(|| "No se pudo crear el arte local de respaldo".to_string())?;
+        response.hero_image = Some(fallback.clone());
+        response.hero_images = vec![fallback.clone()];
+        response.cover_image = Some(fallback);
+        response.source = Some("Snext local".into());
+    } else if response.cover_image.is_none() {
+        response.cover_image = response.hero_image.clone();
+    }
+    Ok(response)
+}
+
 #[tauri::command]
 async fn search_steam_grid_games(
     request: SteamGridSearchRequest,
@@ -1765,7 +2254,7 @@ async fn fetch_steam_grid_art(
         return Err(format!("SteamGridDB no devolvió arte para {matched_title}"));
     }
 
-    Ok(SteamGridArtResponse {
+    let mut response = SteamGridArtResponse {
         hero_image,
         hero_images,
         cover_image,
@@ -1773,7 +2262,9 @@ async fn fetch_steam_grid_art(
         description,
         matched_title,
         source: Some("SteamGridDB".into()),
-    })
+    };
+    cache_remote_art_response(&mut response, &client, title).await;
+    Ok(response)
 }
 
 #[tauri::command]
@@ -1833,7 +2324,11 @@ async fn fetch_screen_scraper_art(
         return Err(format!("ScreenScraper no devolvió arte para {matched_title}"));
     }
 
-    Ok(SteamGridArtResponse {
+    let client = reqwest::Client::builder()
+        .user_agent("Snext/0.3 ScreenScraper art cache")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut response = SteamGridArtResponse {
         hero_images: hero_image.iter().cloned().collect(),
         hero_image,
         cover_image,
@@ -1841,7 +2336,9 @@ async fn fetch_screen_scraper_art(
         description: json_string_for_keys(&data, &["descripcion", "description", "synopsis", "synopsis_en"]),
         matched_title,
         source: Some("ScreenScraper".into()),
-    })
+    };
+    cache_remote_art_response(&mut response, &client, request.title.trim()).await;
+    Ok(response)
 }
 
 #[tauri::command]
@@ -1940,7 +2437,9 @@ async fn fetch_remote_image(
         || host.ends_with(".steamgriddb.com")
         || (host == "s3.amazonaws.com" && url.path().starts_with("/steamgriddb/"))
         || host == "screenscraper.fr"
-        || host.ends_with(".screenscraper.fr");
+        || host.ends_with(".screenscraper.fr")
+        || host.ends_with(".wikipedia.org")
+        || host.ends_with(".wikimedia.org");
     if url.scheme() != "https" || !allowed {
         return Err("El origen de la imagen no está permitido".into());
     }
@@ -2231,6 +2730,7 @@ pub fn run() {
             fetch_discord_presence,
             fetch_retro_achievements,
             fetch_es_de_art,
+            fetch_public_game_art,
             search_steam_grid_games,
             fetch_steam_grid_art,
             fetch_screen_scraper_art,

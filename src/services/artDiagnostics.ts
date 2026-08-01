@@ -124,6 +124,33 @@ export async function runArtDiagnostics(
     });
   }
 
+  try {
+    const art = await invoke<SteamGridArtResponse>("fetch_public_game_art", {
+      request: {
+        title: options.gameTitle,
+        platform: "",
+        language: "es",
+      },
+    });
+    const imageUrl = art.cover_image ?? art.hero_image ?? art.logo;
+    if (!imageUrl) throw new Error("El respaldo público no devolvió una imagen.");
+    const preview = await downloadPreview(imageUrl);
+    steps.push({
+      id: "art-last-resort",
+      label: "Respaldo de arte",
+      status: "ok",
+      detail: `Arte persistente desde ${art.matched_title}.`,
+      preview,
+    });
+  } catch (error) {
+    steps.push({
+      id: "art-last-resort",
+      label: "Respaldo de arte",
+      status: "error",
+      detail: errorMessage(error),
+    });
+  }
+
   if (!options.steamGridDbApiKey.trim()) {
     steps.push({
       id: "steamgrid-auth",
