@@ -2844,9 +2844,53 @@ fn detect_active_game() -> ActiveGame {
     }
 }
 
+fn desktop_exec_value(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+}
+
+fn register_appimage_launcher() {
+    let Ok(appimage) = std::env::var("APPIMAGE") else {
+        return;
+    };
+    let appimage_path = PathBuf::from(appimage);
+    if !appimage_path.is_file() {
+        return;
+    }
+
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
+    let data_home = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(home).join(".local/share"));
+    let applications_dir = data_home.join("applications");
+    let icon_dir = data_home.join("icons/hicolor/128x128/apps");
+    if fs::create_dir_all(&applications_dir).is_err() || fs::create_dir_all(&icon_dir).is_err() {
+        return;
+    }
+
+    let icon_path = icon_dir.join("app.snext.dashboard.png");
+    if fs::write(&icon_path, include_bytes!("../icons/128x128.png")).is_err() {
+        return;
+    }
+
+    let entry = format!(
+        "[Desktop Entry]\nVersion=1.0\nType=Application\nName=Snext\nComment=Companion dashboard para tu sesion de juego\nExec=\"{}\"\nIcon={}\nTerminal=false\nCategories=Game;Utility;\nStartupNotify=true\nStartupWMClass=app.snext.dashboard\n",
+        desktop_exec_value(&appimage_path),
+        icon_path.to_string_lossy(),
+    );
+    let _ = fs::write(applications_dir.join("app.snext.dashboard.desktop"), entry);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|_app| {
+            register_appimage_launcher();
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_system_snapshot,

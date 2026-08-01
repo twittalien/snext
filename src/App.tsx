@@ -85,8 +85,8 @@ type PendingGameMatch = {
   candidates: SteamGridSearchResult[];
 };
 
-const SNEXT_VERSION = "0.4.0";
-const SNEXT_BUILD = "Steam Store, Spotify persistente y ayuda de credenciales";
+const SNEXT_VERSION = "0.4.2";
+const SNEXT_BUILD = "AppImage portable con acceso KDE autocreado";
 const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:53127/callback";
 const SPOTIFY_SCOPES = [
   "user-read-currently-playing",

@@ -64,6 +64,10 @@ npm run build
 npm run tauri build
 ```
 
+## Ejecutable para Bazzite
+
+Snext se puede usar sin Konsole como un AppImage portable. Cada version publica un unico archivo descargable desde GitHub Releases: se abre con doble clic desde Dolphin, no necesita el repositorio y registra su propio acceso en el menu de KDE durante la primera ejecucion. Lee [la guia de instalacion](docs/ejecutable-bazzite.md) para los pasos completos.
+
 ## Project Structure
 
 ```text
