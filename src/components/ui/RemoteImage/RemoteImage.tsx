@@ -57,9 +57,9 @@ export function RemoteImage({
       };
     }
 
-    // Let WebKit try HTTPS immediately while Tauri downloads a local data URL.
-    // Either path can succeed independently on different Bazzite installations.
-    setResolvedSrc(src);
+    // Local ES-DE paths must go through Tauri. WebKit blocks file:// sources in
+    // some Bazzite/Tauri builds even when the file exists and is readable.
+    setResolvedSrc(/^file:\/\//i.test(src) ? fallbackSrc : src);
     loadRemoteSource(src)
       .then((dataUrl) => {
         if (active) setResolvedSrc(dataUrl);

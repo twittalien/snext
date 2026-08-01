@@ -844,7 +844,13 @@ fn xml_tag_value(entry: &str, tag: &str) -> Option<String> {
     let close = format!("</{tag}>");
     let start = entry.find(&open)? + open.len();
     let end = entry[start..].find(&close)? + start;
-    let value = entry[start..end].trim();
+    let value = entry[start..end]
+        .trim()
+        .strip_prefix("<![CDATA[")
+        .unwrap_or(entry[start..end].trim())
+        .strip_suffix("]]>")
+        .unwrap_or(entry[start..end].trim())
+        .trim();
     if value.is_empty() {
         None
     } else {
@@ -857,6 +863,66 @@ fn xml_tag_value(entry: &str, tag: &str) -> Option<String> {
                 .replace("&gt;", ">"),
         )
     }
+}
+
+fn media_file_name(value: &str) -> Option<&str> {
+    let path = value
+        .trim()
+        .split('?')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches('/');
+    Path::new(path).file_name().and_then(|name| name.to_str())
+}
+
+fn find_local_media_file(root: &Path, file_name: &str) -> Option<PathBuf> {
+    if !root.is_dir() {
+        return None;
+    }
+
+    let target = file_name.to_ascii_lowercase();
+    let target_stem = Path::new(file_name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(normalized_game_title)
+        .unwrap_or_default();
+    let mut pending = vec![(root.to_path_buf(), 0usize)];
+    let mut visited = 0usize;
+
+    while let Some((directory, depth)) = pending.pop() {
+        if depth > 7 || visited >= 25_000 {
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            visited += 1;
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push((path, depth + 1));
+                continue;
+            }
+            if !path.is_file() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if name.eq_ignore_ascii_case(&target) {
+                return Some(path);
+            }
+            let candidate_stem = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(normalized_game_title)
+                .unwrap_or_default();
+            if !target_stem.is_empty() && candidate_stem == target_stem {
+                return Some(path);
+            }
+        }
+    }
+    None
 }
 
 fn local_media_roots() -> Vec<PathBuf> {
@@ -912,8 +978,14 @@ fn resolve_es_de_media_path(gamelist_path: &Path, raw_value: &str) -> Option<Str
     if value.is_empty() {
         return None;
     }
-    if value.starts_with("https://") || value.starts_with("file://") {
+    if value.starts_with("https://") {
         return Some(value.to_string());
+    }
+    if value.starts_with("file://") {
+        return reqwest::Url::parse(value)
+            .ok()
+            .and_then(|url| url.to_file_path().ok())
+            .and_then(|path| path_to_file_url(&path));
     }
 
     let system = gamelist_path
@@ -948,10 +1020,27 @@ fn resolve_es_de_media_path(gamelist_path: &Path, raw_value: &str) -> Option<Str
         candidates.push(emulation_media_root.join(system).join("screenshots").join(trimmed));
     }
 
-    candidates
+    if let Some(url) = candidates
         .into_iter()
         .find(|candidate| candidate.is_file())
         .and_then(|candidate| path_to_file_url(&candidate))
+    {
+        return Some(url);
+    }
+
+    // ES-DE gamelist.xml sometimes keeps an old relative media path after the
+    // scraper has reorganised files. Resolve the file name inside the known
+    // media trees so a valid local scrape remains useful to Snext.
+    let file_name = media_file_name(value)?;
+    [
+        es_de_root.join("downloaded_media").join(system),
+        es_de_root.join("media").join(system),
+        es_de_root.join("gamelists").join(system),
+        emulation_media_root.join(system),
+    ]
+    .into_iter()
+    .find_map(|root| find_local_media_file(&root, file_name))
+    .and_then(|candidate| path_to_file_url(&candidate))
 }
 
 fn es_de_gamelist_paths() -> Vec<PathBuf> {

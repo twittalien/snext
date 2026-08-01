@@ -88,8 +88,8 @@ type PendingGameMatch = {
   candidates: SteamGridSearchResult[];
 };
 
-const SNEXT_VERSION = "0.3.1";
-const SNEXT_BUILD = "ES-DE local primero + proxy file";
+const SNEXT_VERSION = "0.3.2";
+const SNEXT_BUILD = "ES-DE media resolver + proxy local estricto";
 const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:53127/callback";
 const SPOTIFY_SCOPES = [
   "user-read-currently-playing",
