@@ -88,8 +88,8 @@ type PendingGameMatch = {
   candidates: SteamGridSearchResult[];
 };
 
-const SNEXT_VERSION = "0.3.0";
-const SNEXT_BUILD = "Hero carousel + Ollama primero";
+const SNEXT_VERSION = "0.3.1";
+const SNEXT_BUILD = "ES-DE local primero + proxy file";
 const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:53127/callback";
 const SPOTIFY_SCOPES = [
   "user-read-currently-playing",
@@ -1073,9 +1073,9 @@ function App() {
                 </p>
 
                 <details open>
-                  <summary>Juego activo y SteamGridDB</summary>
+                  <summary>Juego activo, ES-DE y SteamGridDB</summary>
                   <p>
-                    La detección se actualiza cada 10 segundos. Snext normaliza puntuación, subtítulos y variantes del nombre antes de consultar SteamGridDB. Si no encuentra arte, usa ScreenScraper cuando hayas configurado ID y contraseña de desarrollador, más tu usuario y contraseña de ScreenScraper.
+                    La detección se actualiza cada 10 segundos. Para juegos emulados, Snext busca primero en tus gamelist.xml de ES-DE y usa carátulas, fanart, marquee y descripción locales. SteamGridDB y ScreenScraper se usan después para completar faltantes.
                   </p>
                 </details>
 

@@ -4,7 +4,7 @@ use std::{
     fs,
     io::{Read, Write},
     net::TcpListener,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     thread,
     time::{Duration, Instant},
@@ -109,6 +109,13 @@ struct ScreenScraperRequest {
     username: String,
     password: String,
     language: String,
+}
+
+#[derive(Deserialize)]
+struct EsDeArtRequest {
+    title: String,
+    platform: String,
+    metadata_hint: String,
 }
 
 #[derive(Serialize)]
@@ -832,6 +839,278 @@ fn screen_scraper_system_id(platform: &str) -> Option<&'static str> {
     None
 }
 
+fn xml_tag_value(entry: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = entry.find(&open)? + open.len();
+    let end = entry[start..].find(&close)? + start;
+    let value = entry[start..end].trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(
+            value
+                .replace("&amp;", "&")
+                .replace("&apos;", "'")
+                .replace("&quot;", "\"")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">"),
+        )
+    }
+}
+
+fn local_media_roots() -> Vec<PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/var/home/osanchez".into());
+    [
+        PathBuf::from(&home).join("ES-DE"),
+        PathBuf::from(&home).join("Emulation"),
+        PathBuf::from(&home).join(".emulationstation"),
+        PathBuf::from(&home).join(".local/share/snext"),
+    ]
+    .into_iter()
+    .collect()
+}
+
+fn allowed_local_media_path(path: &Path) -> bool {
+    let Ok(canonical_path) = path.canonicalize() else {
+        return false;
+    };
+
+    local_media_roots().into_iter().any(|root| {
+        root.canonicalize()
+            .map(|canonical_root| canonical_path.starts_with(canonical_root))
+            .unwrap_or(false)
+    })
+}
+
+fn path_to_file_url(path: &Path) -> Option<String> {
+    if !allowed_local_media_path(path) {
+        return None;
+    }
+    reqwest::Url::from_file_path(path).ok().map(|url| url.to_string())
+}
+
+fn image_content_type(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        _ => "image/png",
+    }
+}
+
+fn resolve_es_de_media_path(gamelist_path: &Path, raw_value: &str) -> Option<String> {
+    let value = raw_value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if value.starts_with("https://") || value.starts_with("file://") {
+        return Some(value.to_string());
+    }
+
+    let system = gamelist_path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/var/home/osanchez".into());
+    let es_de_root = PathBuf::from(&home).join("ES-DE");
+    let emulation_media_root = PathBuf::from(&home).join("Emulation/tools/downloaded_media");
+    let gamelist_dir = gamelist_path.parent().unwrap_or_else(|| Path::new("/"));
+    let trimmed = value.trim_start_matches("./");
+    let mut candidates = Vec::new();
+
+    if let Some(rest) = value.strip_prefix("~/") {
+        candidates.push(PathBuf::from(&home).join(rest));
+    } else if value.starts_with('/') {
+        candidates.push(PathBuf::from(value));
+    } else {
+        candidates.push(gamelist_dir.join(value));
+        candidates.push(es_de_root.join(value));
+        candidates.push(es_de_root.join("downloaded_media").join(system).join(trimmed));
+        candidates.push(es_de_root.join("downloaded_media").join(system).join("covers").join(trimmed));
+        candidates.push(es_de_root.join("downloaded_media").join(system).join("marquees").join(trimmed));
+        candidates.push(es_de_root.join("downloaded_media").join(system).join("fanart").join(trimmed));
+        candidates.push(es_de_root.join("downloaded_media").join(system).join("screenshots").join(trimmed));
+        candidates.push(es_de_root.join("downloaded_media").join(system).join("titlescreens").join(trimmed));
+        candidates.push(emulation_media_root.join(system).join(trimmed));
+        candidates.push(emulation_media_root.join(system).join("covers").join(trimmed));
+        candidates.push(emulation_media_root.join(system).join("marquees").join(trimmed));
+        candidates.push(emulation_media_root.join(system).join("fanart").join(trimmed));
+        candidates.push(emulation_media_root.join(system).join("screenshots").join(trimmed));
+    }
+
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .and_then(|candidate| path_to_file_url(&candidate))
+}
+
+fn es_de_gamelist_paths() -> Vec<PathBuf> {
+    local_media_roots()
+        .into_iter()
+        .flat_map(|root| [root.join("gamelists")])
+        .filter_map(|gamelists| fs::read_dir(gamelists).ok())
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .map(|entry| entry.path().join("gamelist.xml"))
+        .filter(|path| path.is_file())
+        .collect()
+}
+
+fn es_de_entry_score(
+    title: &str,
+    platform: &str,
+    metadata_hint: &str,
+    gamelist_path: &Path,
+    entry: &str,
+) -> usize {
+    let normalized_title = normalized_game_title(title);
+    let name = xml_tag_value(entry, "name").unwrap_or_default();
+    let path = xml_tag_value(entry, "path").unwrap_or_default();
+    let normalized_name = normalized_game_title(&name);
+    let normalized_path = normalized_game_title(
+        Path::new(&path)
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or(&path),
+    );
+    let mut score = 0;
+
+    if normalized_name == normalized_title {
+        score += 120;
+    } else if !normalized_name.is_empty()
+        && (normalized_name.contains(&normalized_title) || normalized_title.contains(&normalized_name))
+    {
+        score += 80;
+    }
+
+    if normalized_path == normalized_title {
+        score += 90;
+    } else if !normalized_path.is_empty()
+        && (normalized_path.contains(&normalized_title) || normalized_title.contains(&normalized_path))
+    {
+        score += 55;
+    }
+
+    let lower_hint = metadata_hint.to_ascii_lowercase();
+    let lower_path = path.to_ascii_lowercase();
+    if !lower_hint.is_empty() && !lower_path.is_empty()
+        && (lower_hint.contains(&lower_path) || lower_path.contains(&lower_hint))
+    {
+        score += 120;
+    }
+
+    let system = gamelist_path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let lower_platform = platform.to_ascii_lowercase();
+    if !system.is_empty()
+        && (lower_platform.contains(&system)
+            || lower_hint.contains(&format!("/roms/{system}/"))
+            || lower_hint.contains(&format!("\\roms\\{system}\\")))
+    {
+        score += 35;
+    }
+
+    score
+}
+
+#[tauri::command]
+fn fetch_es_de_art(request: EsDeArtRequest) -> Result<SteamGridArtResponse, String> {
+    let title = request.title.trim();
+    if title.is_empty() {
+        return Err("Falta el título para buscar en ES-DE".into());
+    }
+
+    let mut best: Option<(usize, PathBuf, String)> = None;
+    for gamelist_path in es_de_gamelist_paths() {
+        let Ok(xml) = fs::read_to_string(&gamelist_path) else {
+            continue;
+        };
+        let mut offset = 0;
+        while let Some(start) = xml[offset..].find("<game") {
+            let absolute_start = offset + start;
+            let Some(open_end) = xml[absolute_start..].find('>') else {
+                break;
+            };
+            if !xml[absolute_start..absolute_start + open_end + 1].starts_with("<game") {
+                offset = absolute_start + open_end + 1;
+                continue;
+            }
+            let Some(end) = xml[absolute_start..].find("</game>") else {
+                break;
+            };
+            let absolute_end = absolute_start + end + "</game>".len();
+            let entry = &xml[absolute_start..absolute_end];
+            let score = es_de_entry_score(
+                title,
+                &request.platform,
+                &request.metadata_hint,
+                &gamelist_path,
+                entry,
+            );
+            if score > best.as_ref().map(|current| current.0).unwrap_or(0) {
+                best = Some((score, gamelist_path.clone(), entry.to_string()));
+            }
+            offset = absolute_end;
+        }
+    }
+
+    let Some((score, gamelist_path, entry)) = best else {
+        return Err(format!("ES-DE no encontró {title}"));
+    };
+    if score < 55 {
+        return Err(format!("ES-DE no encontró una coincidencia confiable para {title}"));
+    }
+
+    let matched_title = xml_tag_value(&entry, "name").unwrap_or_else(|| title.to_string());
+    let description = xml_tag_value(&entry, "desc");
+    let cover_image = xml_tag_value(&entry, "image")
+        .or_else(|| xml_tag_value(&entry, "thumbnail"))
+        .and_then(|value| resolve_es_de_media_path(&gamelist_path, &value));
+    let logo = xml_tag_value(&entry, "marquee")
+        .and_then(|value| resolve_es_de_media_path(&gamelist_path, &value));
+    let hero_candidates = [
+        xml_tag_value(&entry, "fanart"),
+        xml_tag_value(&entry, "titleshot"),
+        xml_tag_value(&entry, "screenshot"),
+        xml_tag_value(&entry, "thumbnail"),
+        xml_tag_value(&entry, "image"),
+    ];
+    let mut hero_images = Vec::new();
+    for candidate in hero_candidates.into_iter().flatten() {
+        if let Some(url) = resolve_es_de_media_path(&gamelist_path, &candidate) {
+            push_unique_url(&mut hero_images, url);
+        }
+    }
+    let hero_image = hero_images.first().cloned();
+
+    if cover_image.is_none() && hero_image.is_none() && logo.is_none() && description.is_none() {
+        return Err(format!("ES-DE encontró {matched_title}, pero sin arte ni descripción"));
+    }
+
+    Ok(SteamGridArtResponse {
+        hero_image,
+        hero_images,
+        cover_image,
+        logo,
+        description,
+        matched_title,
+        source: Some("ES-DE local".into()),
+    })
+}
+
 fn steam_grid_title_candidates(title: &str) -> Vec<String> {
     let without_metadata = title
         .split('(')
@@ -1546,6 +1825,26 @@ async fn fetch_remote_image(
     request: RemoteImageRequest,
 ) -> Result<RemoteImageResponse, String> {
     let url = reqwest::Url::parse(request.url.trim()).map_err(|error| error.to_string())?;
+    if url.scheme() == "file" {
+        let path = url
+            .to_file_path()
+            .map_err(|_| "La ruta local de imagen no es válida".to_string())?;
+        if !allowed_local_media_path(&path) {
+            return Err("La ruta local de imagen no está permitida".into());
+        }
+        let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+        if bytes.len() > 10 * 1024 * 1024 {
+            return Err("La imagen supera el límite de 10 MB".into());
+        }
+        return Ok(RemoteImageResponse {
+            data_url: format!(
+                "data:{};base64,{}",
+                image_content_type(&path),
+                BASE64_STANDARD.encode(bytes)
+            ),
+        });
+    }
+
     let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
     let allowed = host == "media.retroachievements.org"
         || host == "steamgriddb.com"
@@ -1842,6 +2141,7 @@ pub fn run() {
             generate_ai_tip,
             fetch_discord_presence,
             fetch_retro_achievements,
+            fetch_es_de_art,
             search_steam_grid_games,
             fetch_steam_grid_art,
             fetch_screen_scraper_art,

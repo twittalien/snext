@@ -10,6 +10,7 @@ export type ArtDiagnosticStep = {
 
 type SteamGridArtResponse = {
   hero_image?: string;
+  hero_images?: string[];
   cover_image?: string;
   logo?: string;
   matched_title: string;
@@ -83,6 +84,42 @@ export async function runArtDiagnostics(
       id: "native-image",
       label: "Canal nativo de imágenes",
       status: "error",
+      detail: errorMessage(error),
+    });
+  }
+
+  try {
+    const art = await invoke<SteamGridArtResponse>("fetch_es_de_art", {
+      request: {
+        title: options.gameTitle,
+        platform: "",
+        metadata_hint: "",
+      },
+    });
+    const imageUrl = art.cover_image ?? art.hero_image ?? art.logo;
+    steps.push({
+      id: "esde-search",
+      label: "ES-DE local",
+      status: imageUrl ? "ok" : "warning",
+      detail: imageUrl
+        ? `Coincidencia local: ${art.matched_title}. Arte desde gamelist.xml.`
+        : `Coincidencia local: ${art.matched_title}, pero sin imagen local.`,
+    });
+    if (imageUrl) {
+      const preview = await downloadPreview(imageUrl);
+      steps.push({
+        id: "esde-image",
+        label: "Imagen ES-DE",
+        status: "ok",
+        detail: "La imagen local se convirtió correctamente.",
+        preview,
+      });
+    }
+  } catch (error) {
+    steps.push({
+      id: "esde-error",
+      label: "ES-DE local",
+      status: "warning",
       detail: errorMessage(error),
     });
   }

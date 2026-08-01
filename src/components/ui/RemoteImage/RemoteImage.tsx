@@ -18,7 +18,7 @@ type RemoteImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
 const imageCache = new Map<string, Promise<string>>();
 
 function isRemoteSource(src?: string) {
-  return Boolean(src && /^https:\/\//i.test(src));
+  return Boolean(src && /^(https|file):\/\//i.test(src));
 }
 
 function loadRemoteSource(src: string) {

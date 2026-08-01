@@ -803,6 +803,34 @@ async function loadSteamGridDbArt(
   };
 }
 
+async function loadEsDeArt(game: GameHeroData): Promise<Partial<GameHeroData>> {
+  if (game.title === fallbackGame.title) {
+    return {};
+  }
+
+  const art = await invoke<SteamGridArtResponse>("fetch_es_de_art", {
+    request: {
+      title: game.title,
+      platform: `${game.platform} ${game.source} ${game.platformHint ?? ""}`,
+      metadata_hint: game.platformHint ?? "",
+    },
+  });
+
+  return {
+    heroImages:
+      art.hero_images && art.hero_images.length > 0
+        ? art.hero_images
+        : art.hero_image
+          ? [art.hero_image]
+          : game.heroImages,
+    heroImage: art.hero_image ?? game.heroImage,
+    coverImage: art.cover_image ?? game.coverImage,
+    logo: art.logo ?? game.logo,
+    description: art.description ?? game.description,
+    ratingLabel: `Arte local por ES-DE · ${art.matched_title}`,
+  };
+}
+
 async function loadScreenScraperArt(
   game: GameHeroData,
   options: DashboardDataOptions,
@@ -837,10 +865,66 @@ async function loadScreenScraperArt(
   };
 }
 
+function isProviderDescription(description: string, originalDescription: string) {
+  return (
+    description !== originalDescription &&
+    !description.includes("Conecta SteamGridDB") &&
+    !description.startsWith("Jugando ")
+  );
+}
+
+function fillMissingGameArt(
+  current: GameHeroData,
+  original: GameHeroData,
+  art: Partial<GameHeroData>,
+): GameHeroData {
+  const currentHasProviderDescription = isProviderDescription(
+    current.description,
+    original.description,
+  );
+
+  return {
+    ...current,
+    heroImages:
+      current.heroImages && current.heroImages.length > 0
+        ? current.heroImages
+        : art.heroImages,
+    heroImage:
+      current.heroImage && current.heroImage !== original.heroImage
+        ? current.heroImage
+        : art.heroImage ?? current.heroImage,
+    coverImage:
+      current.coverImage && current.coverImage !== original.coverImage
+        ? current.coverImage
+        : art.coverImage ?? current.coverImage,
+    logo: current.logo ?? art.logo,
+    description: currentHasProviderDescription
+      ? current.description
+      : art.description ?? current.description,
+    ratingLabel: art.ratingLabel ?? current.ratingLabel,
+  };
+}
+
 async function enrichGameWithProviders(
   game: GameHeroData,
   options: DashboardDataOptions,
 ): Promise<GameHeroData> {
+  let resolvedGame = game;
+
+  try {
+    const localArt = await loadEsDeArt(game);
+    if (
+      localArt.heroImage ||
+      localArt.coverImage ||
+      localArt.logo ||
+      localArt.description
+    ) {
+      resolvedGame = { ...resolvedGame, ...localArt };
+    }
+  } catch (esDeError) {
+    console.error("ES-DE art failed", esDeError);
+  }
+
   try {
     const selectedGameId =
       options.steamGridDbGameOverrides[normalizeGameTitleKey(game.title)];
@@ -850,23 +934,29 @@ async function enrichGameWithProviders(
       selectedGameId,
       options.language,
     );
-    return { ...game, ...art };
+    if (art.heroImage || art.coverImage || art.logo || art.description) {
+      resolvedGame = fillMissingGameArt(resolvedGame, game, art);
+    }
   } catch (steamGridError) {
     console.error("SteamGridDB art failed", steamGridError);
-    try {
-      const fallbackArt = await loadScreenScraperArt(game, options);
-      if (fallbackArt.heroImage || fallbackArt.coverImage || fallbackArt.logo) {
-        return { ...game, ...fallbackArt };
-      }
-    } catch (screenScraperError) {
-      console.error("ScreenScraper art failed", screenScraperError);
-    }
-
     const message = steamGridError instanceof Error
       ? steamGridError.message
       : String(steamGridError);
-    return { ...game, ratingLabel: `Sin arte · ${message}` };
+    if (resolvedGame === game) {
+      resolvedGame = { ...resolvedGame, ratingLabel: `Sin arte SteamGridDB · ${message}` };
+    }
   }
+
+  try {
+    const fallbackArt = await loadScreenScraperArt(game, options);
+    if (fallbackArt.heroImage || fallbackArt.coverImage || fallbackArt.logo || fallbackArt.description) {
+      resolvedGame = fillMissingGameArt(resolvedGame, game, fallbackArt);
+    }
+  } catch (screenScraperError) {
+    console.error("ScreenScraper art failed", screenScraperError);
+  }
+
+  return resolvedGame;
 }
 
 async function loadRetroAchievements(
