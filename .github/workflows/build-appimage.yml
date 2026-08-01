@@ -14,7 +14,7 @@ permissions:
 jobs:
   appimage:
     name: AppImage para Bazzite
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Obtener codigo
         uses: actions/checkout@v4
@@ -36,11 +36,14 @@ jobs:
             curl \
             file \
             libayatana-appindicator3-dev \
+            libjavascriptcoregtk-4.1-dev \
             librsvg2-dev \
             libssl-dev \
+            libsoup-3.0-dev \
             libwebkit2gtk-4.1-dev \
             libxdo-dev \
             patchelf \
+            pkg-config \
             wget
 
       - name: Instalar dependencias del proyecto
