@@ -1097,23 +1097,24 @@ fn remote_game_art_host_allowed(url: &reqwest::Url) -> bool {
         || host.ends_with(".wikimedia.org")
 }
 
-fn remote_image_extension(content_type: &str, url: &reqwest::Url) -> &str {
+fn remote_image_extension(content_type: &str, url: &reqwest::Url) -> String {
     if content_type.contains("png") {
-        "png"
+        "png".into()
     } else if content_type.contains("webp") {
-        "webp"
+        "webp".into()
     } else if content_type.contains("gif") {
-        "gif"
+        "gif".into()
     } else if content_type.contains("avif") {
-        "avif"
+        "avif".into()
     } else if content_type.contains("jpeg") || content_type.contains("jpg") {
-        "jpg"
+        "jpg".into()
     } else {
         url.path()
             .rsplit('.')
             .next()
             .filter(|extension| matches!(*extension, "jpg" | "jpeg" | "png" | "webp" | "gif" | "avif"))
             .unwrap_or("img")
+            .to_string()
     }
 }
 
@@ -2018,13 +2019,13 @@ fn create_generated_game_art(title: &str, platform: &str) -> Option<String> {
     let display_title = xml_escape(title);
     let display_platform = xml_escape(platform);
     let svg = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
 <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#11192f"/><stop offset="0.55" stop-color="#3b246f"/><stop offset="1" stop-color="#0e7186"/></linearGradient></defs>
 <rect width="1200" height="630" fill="url(#bg)"/><circle cx="910" cy="165" r="125" fill="#46d9ef" fill-opacity=".25"/><circle cx="1030" cy="470" r="190" fill="#9c6bff" fill-opacity=".22"/>
 <text x="76" y="110" fill="#5eeaff" font-family="sans-serif" font-size="25" font-weight="700" letter-spacing="4">SNEXT · ARTE LOCAL</text>
 <text x="76" y="292" fill="white" font-family="sans-serif" font-size="78" font-weight="800">{display_title}</text>
 <text x="76" y="360" fill="#c6d2e9" font-family="sans-serif" font-size="31">{display_platform}</text>
-</svg>"#
+</svg>"##
     );
     fs::write(&target, svg).ok()?;
     path_to_file_url(&target)
