@@ -114,6 +114,7 @@ struct ScreenScraperRequest {
 #[derive(Serialize)]
 struct SteamGridArtResponse {
     hero_image: Option<String>,
+    hero_images: Vec<String>,
     cover_image: Option<String>,
     logo: Option<String>,
     description: Option<String>,
@@ -475,7 +476,41 @@ fn local_ai_tip(request: &AiTipRequest) -> AiTipResponse {
 #[tauri::command]
 async fn generate_ai_tip(request: AiTipRequest) -> Result<AiTipResponse, String> {
     let prompt = ai_prompt(&request);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|error| error.to_string())?;
+
+    if !request.ollama_url.trim().is_empty() && !request.ollama_model.trim().is_empty() {
+        let url = format!("{}/api/generate", request.ollama_url.trim().trim_end_matches('/'));
+        let response = client
+            .post(url)
+            .json(&serde_json::json!({
+                "model": request.ollama_model,
+                "prompt": prompt.clone(),
+                "stream": false
+            }))
+            .send()
+            .await;
+
+        if let Ok(response) = response {
+            if response.status().is_success() {
+                let data = response
+                    .json::<serde_json::Value>()
+                    .await
+                    .map_err(|error| error.to_string())?;
+                let body = data["response"].as_str().unwrap_or_default().trim().to_string();
+
+                if !body.is_empty() {
+                    return Ok(AiTipResponse {
+                        title: "Snext AI".into(),
+                        body,
+                        source: "ollama".into(),
+                    });
+                }
+            }
+        }
+    }
 
     if request.provider == "gemini" && !request.api_key.trim().is_empty() {
         let url = format!(
@@ -509,37 +544,6 @@ async fn generate_ai_tip(request: AiTipRequest) -> Result<AiTipResponse, String>
                     body,
                     source: "gemini".into(),
                 });
-            }
-        }
-    }
-
-    if !request.ollama_url.trim().is_empty() && !request.ollama_model.trim().is_empty() {
-        let url = format!("{}/api/generate", request.ollama_url.trim().trim_end_matches('/'));
-        let response = client
-            .post(url)
-            .json(&serde_json::json!({
-                "model": request.ollama_model,
-                "prompt": prompt,
-                "stream": false
-            }))
-            .send()
-            .await;
-
-        if let Ok(response) = response {
-            if response.status().is_success() {
-                let data = response
-                    .json::<serde_json::Value>()
-                    .await
-                    .map_err(|error| error.to_string())?;
-                let body = data["response"].as_str().unwrap_or_default().trim().to_string();
-
-                if !body.is_empty() {
-                    return Ok(AiTipResponse {
-                        title: "Snext AI".into(),
-                        body,
-                        source: "ollama".into(),
-                    });
-                }
             }
         }
     }
@@ -1103,16 +1107,82 @@ async fn first_valid_asset_url(
     client: &reqwest::Client,
     data: Option<&serde_json::Value>,
 ) -> Option<String> {
-    let assets = data?.get("data")?.as_array()?;
+    valid_asset_urls(client, data, 1).await.into_iter().next()
+}
+
+async fn valid_asset_urls(
+    client: &reqwest::Client,
+    data: Option<&serde_json::Value>,
+    limit: usize,
+) -> Vec<String> {
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let mut urls = Vec::new();
+    let Some(assets) = data
+        .and_then(|value| value.get("data"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return urls;
+    };
     for asset in assets {
         let Some(url) = asset.get("url").and_then(serde_json::Value::as_str) else {
             continue;
         };
+        if urls.iter().any(|existing| existing == url) {
+            continue;
+        }
         if remote_image_url_ok(client, url).await {
-            return Some(url.to_string());
+            urls.push(url.to_string());
+            if urls.len() >= limit {
+                break;
+            }
         }
     }
-    None
+    urls
+}
+
+fn push_unique_url(urls: &mut Vec<String>, url: String) {
+    if !urls.iter().any(|existing| existing == &url) {
+        urls.push(url);
+    }
+}
+
+fn wikipedia_title_candidates(title: &str, matched_title: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    for candidate in [matched_title, title] {
+        for value in [
+            candidate.to_string(),
+            candidate.replace(" + ", " "),
+            candidate.replace(" + ", ": "),
+            candidate
+                .split(':')
+                .next()
+                .unwrap_or(candidate)
+                .trim()
+                .to_string(),
+        ] {
+            if !value.is_empty()
+                && !candidates
+                    .iter()
+                    .any(|existing: &String| existing.eq_ignore_ascii_case(&value))
+            {
+                candidates.push(value);
+            }
+        }
+    }
+
+    for candidate in steam_grid_title_candidates(title) {
+        if !candidates
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&candidate))
+        {
+            candidates.push(candidate);
+        }
+    }
+
+    candidates
 }
 
 async fn public_steam_grid_asset(
@@ -1260,12 +1330,23 @@ async fn fetch_steam_grid_art(
     .await
     .ok();
 
-    let mut hero_image = first_valid_asset_url(&client, heroes.as_ref()).await;
-    if hero_image.is_none() {
-        hero_image = first_valid_asset_url(&client, landscape_grids.as_ref()).await;
+    let mut hero_images = valid_asset_urls(&client, heroes.as_ref(), 3).await;
+    if hero_images.len() < 3 {
+        for url in valid_asset_urls(&client, landscape_grids.as_ref(), 3).await {
+            push_unique_url(&mut hero_images, url);
+            if hero_images.len() >= 3 {
+                break;
+            }
+        }
     }
+    let mut hero_image = hero_images.first().cloned();
     let mut cover_image = first_valid_asset_url(&client, poster_grids.as_ref()).await;
-    let mut logo = first_valid_asset_url(&client, logos.as_ref()).await;
+    let logo_candidates = valid_asset_urls(&client, logos.as_ref(), 6).await;
+    let mut logo = logo_candidates
+        .iter()
+        .find(|url| !url.contains("/thumb/"))
+        .cloned()
+        .or_else(|| logo_candidates.first().cloned());
     let mut description = game_details
         .as_ref()
         .and_then(|value| value.get("data"))
@@ -1276,11 +1357,20 @@ async fn fetch_steam_grid_art(
         });
     if hero_image.is_none() {
         hero_image = public_steam_grid_asset(&client, game_id, "heroes").await;
+        if let Some(url) = hero_image.clone() {
+            push_unique_url(&mut hero_images, url);
+        }
         if hero_image.is_none() {
             hero_image = public_steam_grid_asset(&client, game_id, "grids").await;
+            if let Some(url) = hero_image.clone() {
+                push_unique_url(&mut hero_images, url);
+            }
         }
         if hero_image.is_none() {
             hero_image = known_steam_grid_public_cover(title).map(str::to_string);
+            if let Some(url) = hero_image.clone() {
+                push_unique_url(&mut hero_images, url);
+            }
         }
     }
     if cover_image.is_none() {
@@ -1290,22 +1380,17 @@ async fn fetch_steam_grid_art(
         }
     }
     if logo.is_none() {
-        logo = public_steam_grid_asset(&client, game_id, "logos")
-            .await
-            .filter(|url| !url.contains("/thumb/"));
+        logo = public_steam_grid_asset(&client, game_id, "logos").await;
     }
     if description.is_none() {
         let language = request.language.as_deref().unwrap_or("es");
-        for (description_title, description_language) in [
-            (matched_title.as_str(), language),
-            (title, language),
-            (matched_title.as_str(), "en"),
-            (title, "en"),
-        ] {
-            if description.is_some() {
-                break;
+        for description_language in [language, "en"] {
+            for description_title in wikipedia_title_candidates(title, &matched_title) {
+                if description.is_some() {
+                    break;
+                }
+                description = wikipedia_description(&client, &description_title, description_language).await;
             }
-            description = wikipedia_description(&client, description_title, description_language).await;
         }
     }
     if hero_image.is_none() && cover_image.is_none() && logo.is_none() {
@@ -1314,6 +1399,7 @@ async fn fetch_steam_grid_art(
 
     Ok(SteamGridArtResponse {
         hero_image,
+        hero_images,
         cover_image,
         logo,
         description,
@@ -1380,6 +1466,7 @@ async fn fetch_screen_scraper_art(
     }
 
     Ok(SteamGridArtResponse {
+        hero_images: hero_image.iter().cloned().collect(),
         hero_image,
         cover_image,
         logo,

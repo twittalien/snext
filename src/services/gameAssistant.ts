@@ -25,10 +25,13 @@ const cacheTtlMs = 1000 * 60 * 30;
 
 function cacheKey(game: GameHeroData, options: AssistantOptions) {
   return [
-    "snext-assistant",
+    "snext-assistant-v2",
     options.language,
     game.title.toLowerCase(),
     game.source.toLowerCase(),
+    options.ollamaUrl.trim().toLowerCase(),
+    options.ollamaModel.trim().toLowerCase(),
+    options.geminiApiKey.trim() ? "gemini-ready" : "gemini-empty",
   ].join(":");
 }
 

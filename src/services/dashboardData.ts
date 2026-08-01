@@ -113,6 +113,7 @@ type OpenWeatherResponse = {
 
 type SteamGridArtResponse = {
   hero_image?: string;
+  hero_images?: string[];
   cover_image?: string;
   logo?: string;
   description?: string;
@@ -784,6 +785,12 @@ async function loadSteamGridDbArt(
   });
 
   return {
+    heroImages:
+      art.hero_images && art.hero_images.length > 0
+        ? art.hero_images
+        : art.hero_image
+          ? [art.hero_image]
+          : game.heroImages,
     heroImage: art.hero_image ?? game.heroImage,
     coverImage: art.cover_image ?? game.coverImage,
     logo: art.logo,
@@ -821,6 +828,7 @@ async function loadScreenScraperArt(
   });
 
   return {
+    heroImages: art.hero_image ? [art.hero_image] : game.heroImages,
     heroImage: art.hero_image ?? game.heroImage,
     coverImage: art.cover_image ?? game.coverImage,
     logo: art.logo ?? game.logo,

@@ -27,9 +27,15 @@
   isolation: isolate;
 }
 
-.game-hero__background {
+.game-hero__backgrounds {
   position: absolute;
   z-index: 0;
+  inset: 0;
+  overflow: hidden;
+}
+
+.game-hero__background {
+  position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
@@ -42,6 +48,16 @@
     900ms
     var(--snext-ease-standard)
     both;
+}
+
+.game-hero__backgrounds--carousel .game-hero__background {
+  opacity: 0;
+  animation:
+    game-hero-carousel
+    calc(var(--game-hero-slide-count) * 7s)
+    linear
+    infinite;
+  animation-delay: calc(var(--game-hero-slide-index) * 7s);
 }
 
 .game-hero__wash {
@@ -115,13 +131,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--snext-space-4);
-}
-
-.game-hero__header .snext-badge {
-  position: absolute;
-  top: clamp(var(--snext-space-4), 3vw, var(--snext-space-6));
-  right: clamp(var(--snext-space-4), 3vw, var(--snext-space-6));
-  z-index: 4;
 }
 
 .game-hero__game-row {
@@ -362,6 +371,24 @@
   from {
     opacity: 0;
     transform: scale(1.07);
+  }
+}
+
+@keyframes game-hero-carousel {
+  0% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+
+  6%,
+  30% {
+    opacity: 1;
+  }
+
+  39%,
+  100% {
+    opacity: 0;
+    transform: scale(1.015);
   }
 }
 

@@ -88,8 +88,8 @@ type PendingGameMatch = {
   candidates: SteamGridSearchResult[];
 };
 
-const SNEXT_VERSION = "0.2.9";
-const SNEXT_BUILD = "SteamGridDB validado + descripción Wiki";
+const SNEXT_VERSION = "0.3.0";
+const SNEXT_BUILD = "Hero carousel + Ollama primero";
 const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:53127/callback";
 const SPOTIFY_SCOPES = [
   "user-read-currently-playing",

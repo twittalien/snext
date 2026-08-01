@@ -1,10 +1,10 @@
 import {
-  Badge,
   Card,
   PlatformBadge,
   ProgressBar,
   RemoteImage,
 } from "../../../components/ui";
+import type { CSSProperties } from "react";
 import { getPlatformInfo } from "../../../services/platformCatalog";
 import "./GameHero.css";
 
@@ -12,6 +12,7 @@ export type GameHeroData = {
   title: string;
   logo?: string;
   heroImage?: string;
+  heroImages?: string[];
   coverImage?: string;
   platform: string;
   source: string;
@@ -60,7 +61,13 @@ export function GameHero({
   className,
 }: GameHeroProps) {
   const progress = Math.min(100, Math.max(0, game.progress ?? 0));
-  const hasHeroImage = Boolean(game.heroImage);
+  const heroImages =
+    game.heroImages && game.heroImages.length > 0
+      ? game.heroImages
+      : game.heroImage
+        ? [game.heroImage]
+        : [];
+  const hasHeroImage = heroImages.length > 0;
   const hasCoverImage = Boolean(game.coverImage);
   const platformInfo = getPlatformInfo(
     `${game.platform} ${game.source} ${game.platformHint ?? ""}`,
@@ -82,12 +89,35 @@ export function GameHero({
     >
       <div className="game-hero__frame">
         {hasHeroImage && (
-          <RemoteImage
-            className="game-hero__background"
-            src={game.heroImage}
-            fallbackSrc="/demo/game/hero.svg"
-            alt=""
-          />
+          <div
+            className={[
+              "game-hero__backgrounds",
+              heroImages.length > 1 && "game-hero__backgrounds--carousel",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            style={
+              {
+                "--game-hero-slide-count": heroImages.length,
+              } as CSSProperties
+            }
+            aria-hidden="true"
+          >
+            {heroImages.map((heroImage, index) => (
+              <RemoteImage
+                className="game-hero__background"
+                src={heroImage}
+                fallbackSrc="/demo/game/hero.svg"
+                alt=""
+                key={`${heroImage}-${index}`}
+                style={
+                  {
+                    "--game-hero-slide-index": index,
+                  } as CSSProperties
+                }
+              />
+            ))}
+          </div>
         )}
 
         <div className="game-hero__wash" />
@@ -101,17 +131,6 @@ export function GameHero({
         <div className="game-hero__content">
           <div className="game-hero__header">
             <p className="snext-eyebrow">Juego activo</p>
-
-            <Badge
-              tone={game.status === "playing" ? "success" : "neutral"}
-              dot={game.status === "playing"}
-            >
-              {game.status === "playing"
-                ? "En juego"
-                : game.status === "recent"
-                  ? "Reciente"
-                  : "Disponible"}
-            </Badge>
           </div>
 
           <div className="game-hero__game-row">
