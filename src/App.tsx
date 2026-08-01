@@ -51,15 +51,12 @@ type Settings = {
   steamUserId: string;
   spotifyClientId: string;
   spotifyAccessToken: string;
+  spotifyRefreshToken: string;
   spotifyTokenExpiresAt: number;
   retroAchievementsApiKey: string;
   steamWebApiKey: string;
   steamGridDbApiKey: string;
   steamGridDbGameOverrides: Record<string, number>;
-  screenScraperDevId: string;
-  screenScraperDevPassword: string;
-  screenScraperUser: string;
-  screenScraperPassword: string;
   weatherProvider: "open-meteo" | "openweathermap";
   openWeatherMapApiKey: string;
   weatherMotion: "full" | "reduced" | "off";
@@ -88,13 +85,114 @@ type PendingGameMatch = {
   candidates: SteamGridSearchResult[];
 };
 
-const SNEXT_VERSION = "0.3.4";
-const SNEXT_BUILD = "Corrección Rust de caché y respaldo de arte";
+const SNEXT_VERSION = "0.4.0";
+const SNEXT_BUILD = "Steam Store, Spotify persistente y ayuda de credenciales";
 const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:53127/callback";
 const SPOTIFY_SCOPES = [
   "user-read-currently-playing",
   "user-read-playback-state",
 ].join(" ");
+
+type CredentialHelp = {
+  title: string;
+  steps: string[];
+  linkLabel: string;
+  url: string;
+};
+
+const CREDENTIAL_HELP = {
+  spotify: {
+    title: "Spotify Client ID",
+    steps: [
+      "Inicia sesión en Spotify for Developers.",
+      "Crea una app o abre la existente y copia su Client ID.",
+      `Agrega ${SPOTIFY_REDIRECT_URI} como Redirect URI y guarda.`,
+    ],
+    linkLabel: "Abrir Spotify Developer Dashboard",
+    url: "https://developer.spotify.com/dashboard",
+  },
+  retroUser: {
+    title: "Usuario RetroAchievements",
+    steps: [
+      "Inicia sesión en RetroAchievements.",
+      "Escribe exactamente tu nombre de usuario público, no tu correo.",
+    ],
+    linkLabel: "Abrir RetroAchievements",
+    url: "https://retroachievements.org/settings",
+  },
+  retroKey: {
+    title: "RetroAchievements Web API Key",
+    steps: [
+      "Inicia sesión y abre Settings en RetroAchievements.",
+      "Copia la Web API Key y pégala aquí. No la compartas.",
+    ],
+    linkLabel: "Abrir configuración de RetroAchievements",
+    url: "https://retroachievements.org/settings",
+  },
+  steamWeb: {
+    title: "Steam Web API Key",
+    steps: [
+      "Inicia sesión con la cuenta de Steam que usarás en Snext.",
+      "Registra un nombre de dominio local, por ejemplo localhost, y copia la key.",
+    ],
+    linkLabel: "Abrir Steam Web API Key",
+    url: "https://steamcommunity.com/dev/apikey",
+  },
+  steamGrid: {
+    title: "SteamGridDB API Key",
+    steps: [
+      "Inicia sesión o crea tu cuenta en SteamGridDB.",
+      "Abre API Preferences, genera una key y pégala aquí.",
+    ],
+    linkLabel: "Abrir SteamGridDB API Preferences",
+    url: "https://www.steamgriddb.com/profile/preferences/api",
+  },
+  openWeather: {
+    title: "OpenWeatherMap API Key",
+    steps: [
+      "Crea una cuenta de OpenWeatherMap.",
+      "Abre My API Keys, genera una key y espera su activación si el portal lo indica.",
+    ],
+    linkLabel: "Abrir OpenWeatherMap API Keys",
+    url: "https://home.openweathermap.org/api_keys",
+  },
+  gemini: {
+    title: "Gemini API Key",
+    steps: [
+      "Abre Google AI Studio con tu cuenta de Google.",
+      "Crea una API key para un proyecto y restríngela a Gemini API.",
+    ],
+    linkLabel: "Abrir Google AI Studio",
+    url: "https://aistudio.google.com/app/apikey",
+  },
+  ollama: {
+    title: "Ollama local",
+    steps: [
+      "Instala Ollama en Bazzite y descarga un modelo, por ejemplo llama3.1.",
+      "Deja la URL local y el nombre del modelo que instalaste. No requiere API key.",
+    ],
+    linkLabel: "Abrir Ollama",
+    url: "https://ollama.com/download",
+  },
+  discordBot: {
+    title: "Discord Bot Token",
+    steps: [
+      "Crea una aplicación en Discord Developer Portal y añade un Bot.",
+      "Copia el token del bot, activa los intents necesarios e invita el bot a tu servidor.",
+    ],
+    linkLabel: "Abrir Discord Developer Portal",
+    url: "https://discord.com/developers/applications",
+  },
+  discordGuild: {
+    title: "Discord Guild ID",
+    steps: [
+      "Activa Developer Mode en Discord.",
+      "Haz clic derecho sobre tu servidor y usa Copiar ID del servidor.",
+    ],
+    linkLabel: "Abrir Discord Developer Portal",
+    url: "https://discord.com/developers/applications",
+  },
+} satisfies Record<string, CredentialHelp>;
 
 const defaultSettings: Settings = {
   name: "twittalien",
@@ -114,15 +212,12 @@ const defaultSettings: Settings = {
   steamUserId: "",
   spotifyClientId: "",
   spotifyAccessToken: "",
+  spotifyRefreshToken: "",
   spotifyTokenExpiresAt: 0,
   retroAchievementsApiKey: "",
   steamWebApiKey: "",
   steamGridDbApiKey: "",
   steamGridDbGameOverrides: {},
-  screenScraperDevId: "",
-  screenScraperDevPassword: "",
-  screenScraperUser: "",
-  screenScraperPassword: "",
   weatherProvider: "open-meteo",
   openWeatherMapApiKey: "",
   weatherMotion: "full",
@@ -153,6 +248,35 @@ async function createCodeChallenge(verifier: string) {
   const data = new TextEncoder().encode(verifier);
   const digest = await window.crypto.subtle.digest("SHA-256", data);
   return base64UrlEncode(digest);
+}
+
+type SpotifyTokenData = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  error?: string;
+};
+
+async function refreshSpotifyAccessToken(
+  clientId: string,
+  refreshToken: string,
+): Promise<SpotifyTokenData> {
+  const response = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  });
+  const data = (await response.json()) as SpotifyTokenData;
+  if (!response.ok || !data.access_token) {
+    throw new Error(data.error ?? `Spotify respondió ${response.status}`);
+  }
+  return data;
 }
 
 const friends: Friend[] = [
@@ -190,35 +314,68 @@ function loadSettings(): Settings {
   }
 }
 
+function CredentialLabel({
+  children,
+  help,
+  onOpen,
+}: {
+  children: string;
+  help: CredentialHelp;
+  onOpen: (help: CredentialHelp) => void;
+}) {
+  return (
+    <span className="credential-label">
+      <span>{children}</span>
+      <button
+        className="credential-help-button"
+        type="button"
+        aria-label={`Cómo configurar ${children}`}
+        title={`Cómo configurar ${children}`}
+        onClick={() => onOpen(help)}
+      >
+        ❕
+      </button>
+    </span>
+  );
+}
+
 function Logo() {
   return (
-    <svg className="logo-mark" viewBox="0 0 72 72" aria-hidden="true">
+    <svg className="logo-mark" viewBox="0 0 64 64" aria-hidden="true">
       <defs>
         <linearGradient
           id="logo-gradient"
-          x1="8"
-          y1="8"
-          x2="64"
-          y2="64"
+          x1="10"
+          y1="54"
+          x2="54"
+          y2="10"
         >
-          <stop stopColor="#865dff" />
-          <stop offset="1" stopColor="#35def2" />
+          <stop stopColor="#7658ed" />
+          <stop offset="0.5" stopColor="#5f9ff0" />
+          <stop offset="1" stopColor="#59e2e7" />
         </linearGradient>
       </defs>
-
       <path
-        d="M52 18c-8-8-25-7-31 3-7 12 6 17 16 18 8 1 14 3 11 9-4 8-21 6-28-2"
+        d="M24.7 39.3 18.4 45.6A11.2 11.2 0 0 1 2.6 29.8l12.7-12.7a11.2 11.2 0 0 1 15.8 0l3.1 3.1"
         fill="none"
         stroke="url(#logo-gradient)"
-        strokeWidth="9"
+        strokeWidth="7"
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
-
       <path
-        d="M20 54c8 8 25 7 31-3 7-12-6-17-16-18-8-1-14-3-11-9 4-8 21-6 28 2"
+        d="m39.3 24.7 6.3-6.3a11.2 11.2 0 0 1 15.8 15.8L48.7 46.9a11.2 11.2 0 0 1-15.8 0l-3.1-3.1"
         fill="none"
         stroke="url(#logo-gradient)"
-        strokeWidth="5"
+        strokeWidth="7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="m23 41 18-18"
+        fill="none"
+        stroke="#f7fcff"
+        strokeWidth="4"
         strokeLinecap="round"
         opacity=".9"
       />
@@ -236,6 +393,9 @@ function Icon({ children }: { children: string }) {
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [credentialHelp, setCredentialHelp] = useState<CredentialHelp | null>(
+    null,
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [now, setNow] = useState(new Date());
   const [settings, setSettings] = useState<Settings>(loadSettings);
@@ -328,19 +488,48 @@ function App() {
         setDataLoading(true);
       }
 
-    const data = await loadDashboardData(settings.weatherLocation, locale, {
+      let spotifyAccessToken = settings.spotifyAccessToken;
+      const tokenExpiresSoon =
+        Boolean(settings.spotifyRefreshToken) &&
+        settings.spotifyTokenExpiresAt <= Date.now() + 90_000;
+      if (tokenExpiresSoon && settings.spotifyClientId.trim()) {
+        try {
+          const token = await refreshSpotifyAccessToken(
+            settings.spotifyClientId.trim(),
+            settings.spotifyRefreshToken,
+          );
+          spotifyAccessToken = token.access_token ?? spotifyAccessToken;
+          setSettings((currentSettings) => ({
+            ...currentSettings,
+            spotifyAccessToken,
+            spotifyRefreshToken:
+              token.refresh_token ?? currentSettings.spotifyRefreshToken,
+            spotifyTokenExpiresAt:
+              Date.now() + Math.max(30, token.expires_in ?? 3600) * 1000,
+          }));
+        } catch (error) {
+          console.error("Spotify token refresh failed", error);
+          if (error instanceof Error && error.message === "invalid_grant") {
+            setSettings((currentSettings) => ({
+              ...currentSettings,
+              spotifyAccessToken: "",
+              spotifyRefreshToken: "",
+              spotifyTokenExpiresAt: 0,
+            }));
+            spotifyAccessToken = "";
+          }
+        }
+      }
+
+      const data = await loadDashboardData(settings.weatherLocation, locale, {
       language: settings.language,
       weatherProvider: settings.weatherProvider,
       openWeatherMapApiKey: settings.openWeatherMapApiKey,
       steamGridDbApiKey: settings.steamGridDbApiKey,
-      screenScraperDevId: settings.screenScraperDevId,
-      screenScraperDevPassword: settings.screenScraperDevPassword,
-      screenScraperUser: settings.screenScraperUser,
-      screenScraperPassword: settings.screenScraperPassword,
       steamGridDbGameOverrides: settings.steamGridDbGameOverrides,
       retroAchievementsUser: settings.retroAchievementsUser,
       retroAchievementsApiKey: settings.retroAchievementsApiKey,
-      spotifyAccessToken: settings.spotifyAccessToken,
+      spotifyAccessToken,
       discordMode: settings.discordMode,
       discordBotToken: settings.discordBotToken,
       discordGuildId: settings.discordGuildId,
@@ -360,12 +549,11 @@ function App() {
       settings.openWeatherMapApiKey,
       settings.retroAchievementsApiKey,
       settings.retroAchievementsUser,
+      settings.spotifyClientId,
       settings.spotifyAccessToken,
+      settings.spotifyRefreshToken,
+      settings.spotifyTokenExpiresAt,
       settings.steamGridDbApiKey,
-      settings.screenScraperDevId,
-      settings.screenScraperDevPassword,
-      settings.screenScraperUser,
-      settings.screenScraperPassword,
       settings.steamGridDbGameOverrides,
       settings.weatherLocation,
       settings.weatherProvider,
@@ -530,6 +718,7 @@ function App() {
       ...currentSettings,
       spotifyClientId: "",
       spotifyAccessToken: "",
+      spotifyRefreshToken: "",
       spotifyTokenExpiresAt: 0,
       retroAchievementsApiKey: "",
       steamWebApiKey: "",
@@ -589,10 +778,7 @@ function App() {
         throw new Error(`Spotify respondió ${response.status}`);
       }
 
-      const tokenData = (await response.json()) as {
-        access_token?: string;
-        expires_in?: number;
-      };
+      const tokenData = (await response.json()) as SpotifyTokenData;
 
       if (!tokenData.access_token) {
         throw new Error("Spotify no devolvió access_token.");
@@ -603,6 +789,7 @@ function App() {
       setSettings((currentSettings) => ({
         ...currentSettings,
         spotifyAccessToken: tokenData.access_token ?? "",
+        spotifyRefreshToken: tokenData.refresh_token ?? "",
         spotifyTokenExpiresAt:
           Date.now() + Math.max(30, tokenData.expires_in ?? 3600) * 1000,
       }));
@@ -620,6 +807,7 @@ function App() {
     setSettings((currentSettings) => ({
       ...currentSettings,
       spotifyAccessToken: "",
+      spotifyRefreshToken: "",
       spotifyTokenExpiresAt: 0,
     }));
   };
@@ -1075,14 +1263,14 @@ function App() {
                 <details open>
                   <summary>Juego activo, ES-DE y SteamGridDB</summary>
                   <p>
-                    La detección se actualiza cada 10 segundos. Para juegos emulados, Snext busca primero en tus gamelist.xml de ES-DE y usa carátulas, fanart, marquee y descripción locales. SteamGridDB y ScreenScraper se usan después para completar faltantes.
+                    La detección se actualiza cada 10 segundos. Para juegos emulados, Snext lee las carátulas, fanart, marquee y descripción que ES-DE ya descargó. Para juegos de Steam, consulta Steam Store sin API key y guarda el resultado en caché local; SteamGridDB completa logos y arte alternativo cuando conectas una key.
                   </p>
                 </details>
 
                 <details>
                   <summary>ScreenScraper</summary>
                   <p>
-                    Regístrate en ScreenScraper.fr y solicita credenciales de desarrollador. Introduce el ID y la contraseña de desarrollador; también puedes añadir tu usuario y contraseña de ScreenScraper para aumentar los límites de consulta. Se usa automáticamente después de SteamGridDB.
+                    No necesitas copiar credenciales de ScreenScraper a Snext. ES-DE ya usa su integración autorizada para descargar el scrape y Snext lee esos archivos locales. Si un juego no existe en tu scrape, Snext prueba Steam Store, SteamGridDB y Wikimedia sin reutilizar credenciales de otras aplicaciones.
                   </p>
                 </details>
 
@@ -1418,7 +1606,12 @@ function App() {
                 <h3>{t.integrations}</h3>
 
                 <label>
-                  Spotify Client ID
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.spotify}
+                    onOpen={setCredentialHelp}
+                  >
+                    Spotify Client ID
+                  </CredentialLabel>
 
                   <input
                     autoComplete="off"
@@ -1446,7 +1639,12 @@ function App() {
                 </p>
 
                 <label>
-                  RetroAchievements usuario
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.retroUser}
+                    onOpen={setCredentialHelp}
+                  >
+                    RetroAchievements usuario
+                  </CredentialLabel>
 
                   <input
                     value={settings.retroAchievementsUser}
@@ -1461,7 +1659,12 @@ function App() {
                 </label>
 
                 <label>
-                  RetroAchievements API key
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.retroKey}
+                    onOpen={setCredentialHelp}
+                  >
+                    RetroAchievements API key
+                  </CredentialLabel>
 
                   <input
                     type="password"
@@ -1478,7 +1681,12 @@ function App() {
                 </label>
 
                 <label>
-                  Steam Web API key
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.steamWeb}
+                    onOpen={setCredentialHelp}
+                  >
+                    Steam Web API key
+                  </CredentialLabel>
 
                   <input
                     type="password"
@@ -1492,7 +1700,12 @@ function App() {
                 </label>
 
                 <label>
-                  SteamGridDB API key
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.steamGrid}
+                    onOpen={setCredentialHelp}
+                  >
+                    SteamGridDB API key
+                  </CredentialLabel>
 
                   <input
                     type="password"
@@ -1506,59 +1719,12 @@ function App() {
                 </label>
 
                 <label>
-                  ScreenScraper developer ID
-
-                  <input
-                    value={settings.screenScraperDevId}
-                    onChange={(event) =>
-                      updateSetting("screenScraperDevId", event.target.value)
-                    }
-                    placeholder="Opcional: ID de desarrollador"
-                  />
-                </label>
-
-                <label>
-                  ScreenScraper developer password
-
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={settings.screenScraperDevPassword}
-                    onChange={(event) =>
-                      updateSetting("screenScraperDevPassword", event.target.value)
-                    }
-                    placeholder="Opcional: contraseña de desarrollador"
-                  />
-                </label>
-
-                <label>
-                  ScreenScraper usuario
-
-                  <input
-                    value={settings.screenScraperUser}
-                    onChange={(event) =>
-                      updateSetting("screenScraperUser", event.target.value)
-                    }
-                    placeholder="Usuario ScreenScraper"
-                  />
-                </label>
-
-                <label>
-                  ScreenScraper contraseña
-
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={settings.screenScraperPassword}
-                    onChange={(event) =>
-                      updateSetting("screenScraperPassword", event.target.value)
-                    }
-                    placeholder="Contraseña ScreenScraper"
-                  />
-                </label>
-
-                <label>
-                  OpenWeatherMap API key
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.openWeather}
+                    onOpen={setCredentialHelp}
+                  >
+                    OpenWeatherMap API key
+                  </CredentialLabel>
 
                   <input
                     type="password"
@@ -1575,7 +1741,12 @@ function App() {
                 </label>
 
                 <label>
-                  Gemini API key
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.gemini}
+                    onOpen={setCredentialHelp}
+                  >
+                    Gemini API key
+                  </CredentialLabel>
 
                   <input
                     type="password"
@@ -1589,7 +1760,12 @@ function App() {
                 </label>
 
                 <label>
-                  Ollama URL
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.ollama}
+                    onOpen={setCredentialHelp}
+                  >
+                    Ollama URL
+                  </CredentialLabel>
 
                   <input
                     value={settings.ollamaUrl}
@@ -1600,7 +1776,12 @@ function App() {
                 </label>
 
                 <label>
-                  Ollama modelo
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.ollama}
+                    onOpen={setCredentialHelp}
+                  >
+                    Ollama modelo
+                  </CredentialLabel>
 
                   <input
                     value={settings.ollamaModel}
@@ -1629,7 +1810,12 @@ function App() {
                 </label>
 
                 <label>
-                  Discord bot token
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.discordBot}
+                    onOpen={setCredentialHelp}
+                  >
+                    Discord bot token
+                  </CredentialLabel>
 
                   <input
                     type="password"
@@ -1643,7 +1829,12 @@ function App() {
                 </label>
 
                 <label>
-                  Discord guild ID
+                  <CredentialLabel
+                    help={CREDENTIAL_HELP.discordGuild}
+                    onOpen={setCredentialHelp}
+                  >
+                    Discord guild ID
+                  </CredentialLabel>
 
                   <input
                     value={settings.discordGuildId}
@@ -1677,6 +1868,49 @@ function App() {
               <p className="privacy">{t.demoWarning}</p>
             </div>
           </aside>
+        </div>
+      )}
+
+      {credentialHelp && (
+        <div className="credential-help-layer" role="presentation">
+          <button
+            className="backdrop"
+            type="button"
+            aria-label="Cerrar ayuda"
+            onClick={() => setCredentialHelp(null)}
+          />
+          <section
+            className="credential-help-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="credential-help-title"
+          >
+            <header>
+              <div>
+                <p className="eyebrow">CONFIGURACIÓN</p>
+                <h2 id="credential-help-title">{credentialHelp.title}</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar ayuda"
+                onClick={() => setCredentialHelp(null)}
+              >
+                ×
+              </button>
+            </header>
+            <ol>
+              {credentialHelp.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <button
+              className="credential-help-link"
+              type="button"
+              onClick={() => openUrl(credentialHelp.url)}
+            >
+              {credentialHelp.linkLabel}
+            </button>
+          </section>
         </div>
       )}
     </div>

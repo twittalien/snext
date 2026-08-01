@@ -125,6 +125,32 @@ export async function runArtDiagnostics(
   }
 
   try {
+    const art = await invoke<SteamGridArtResponse>("fetch_steam_store_art", {
+      request: {
+        title: options.gameTitle,
+        language: "es",
+      },
+    });
+    const imageUrl = art.cover_image ?? art.hero_image ?? art.logo;
+    if (!imageUrl) throw new Error("Steam Store no devolvió una imagen.");
+    const preview = await downloadPreview(imageUrl);
+    steps.push({
+      id: "steam-store",
+      label: "Steam Store",
+      status: "ok",
+      detail: `${art.matched_title}: arte y descripción guardados localmente.`,
+      preview,
+    });
+  } catch (error) {
+    steps.push({
+      id: "steam-store",
+      label: "Steam Store",
+      status: "warning",
+      detail: errorMessage(error),
+    });
+  }
+
+  try {
     const art = await invoke<SteamGridArtResponse>("fetch_public_game_art", {
       request: {
         title: options.gameTitle,

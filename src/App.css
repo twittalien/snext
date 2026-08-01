@@ -909,6 +909,99 @@ main {
   font-weight: 700;
 }
 
+.credential-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.credential-help-button {
+  display: grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(94, 234, 255, 0.45);
+  border-radius: 50%;
+  color: #b9f8ff;
+  background: rgba(53, 223, 240, 0.1);
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.credential-help-button:hover {
+  border-color: #5eeaff;
+  background: rgba(53, 223, 240, 0.2);
+}
+
+.credential-help-layer {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.credential-help-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 31rem);
+  padding: 1.35rem;
+  border: 1px solid rgba(94, 234, 255, 0.22);
+  border-radius: 0.75rem;
+  color: #f8f9ff;
+  background: #11131c;
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.5);
+}
+
+.credential-help-dialog header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.credential-help-dialog h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.credential-help-dialog header button {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.6rem;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 1.25rem;
+}
+
+.credential-help-dialog ol {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1.25rem 0;
+  padding-left: 1.35rem;
+  color: #c2c7d6;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.credential-help-link {
+  width: 100%;
+  min-height: 2.6rem;
+  border: 1px solid rgba(94, 234, 255, 0.38);
+  border-radius: 0.6rem;
+  color: #dffcff;
+  background: rgba(53, 223, 240, 0.12);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .settings-content input,
 .settings-content select,
 .settings-content textarea {

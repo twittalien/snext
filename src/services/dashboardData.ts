@@ -45,10 +45,6 @@ export type DashboardDataOptions = {
   weatherProvider: "open-meteo" | "openweathermap";
   openWeatherMapApiKey: string;
   steamGridDbApiKey: string;
-  screenScraperDevId: string;
-  screenScraperDevPassword: string;
-  screenScraperUser: string;
-  screenScraperPassword: string;
   steamGridDbGameOverrides: Record<string, number>;
   retroAchievementsUser: string;
   retroAchievementsApiKey: string;
@@ -837,37 +833,32 @@ async function loadEsDeArt(game: GameHeroData): Promise<Partial<GameHeroData>> {
   };
 }
 
-async function loadScreenScraperArt(
+async function loadSteamStoreArt(
   game: GameHeroData,
-  options: DashboardDataOptions,
+  language: DashboardDataOptions["language"],
 ): Promise<Partial<GameHeroData>> {
-  if (
-    !options.screenScraperDevId.trim() ||
-    !options.screenScraperDevPassword.trim() ||
-    game.title === fallbackGame.title
-  ) {
+  if (game.title === fallbackGame.title) {
     return {};
   }
 
-  const art = await invoke<SteamGridArtResponse>("fetch_screen_scraper_art", {
+  const art = await invoke<SteamGridArtResponse>("fetch_steam_store_art", {
     request: {
       title: game.title,
-      platform: `${game.platform} ${game.source} ${game.platformHint ?? ""}`,
-      dev_id: options.screenScraperDevId,
-      dev_password: options.screenScraperDevPassword,
-      username: options.screenScraperUser,
-      password: options.screenScraperPassword,
-      language: options.language,
+      language,
     },
   });
-
   return {
-    heroImages: art.hero_image ? [art.hero_image] : game.heroImages,
+    heroImages:
+      art.hero_images && art.hero_images.length > 0
+        ? art.hero_images
+        : art.hero_image
+          ? [art.hero_image]
+          : game.heroImages,
     heroImage: art.hero_image ?? game.heroImage,
     coverImage: art.cover_image ?? game.coverImage,
     logo: art.logo ?? game.logo,
     description: art.description ?? game.description,
-    ratingLabel: `Arte por ScreenScraper · ${art.matched_title}`,
+    ratingLabel: `Arte por Steam Store · ${art.matched_title}`,
   };
 }
 
@@ -984,12 +975,16 @@ async function enrichGameWithProviders(
   }
 
   try {
-    const fallbackArt = await loadScreenScraperArt(game, options);
-    if (fallbackArt.heroImage || fallbackArt.coverImage || fallbackArt.logo || fallbackArt.description) {
-      resolvedGame = fillMissingGameArt(resolvedGame, game, fallbackArt);
+    const steamStoreArt = await loadSteamStoreArt(game, options.language);
+    if (
+      steamStoreArt.heroImage ||
+      steamStoreArt.coverImage ||
+      steamStoreArt.description
+    ) {
+      resolvedGame = fillMissingGameArt(resolvedGame, game, steamStoreArt);
     }
-  } catch (screenScraperError) {
-    console.error("ScreenScraper art failed", screenScraperError);
+  } catch (steamStoreError) {
+    console.error("Steam Store art failed", steamStoreError);
   }
 
   if (!resolvedGame.heroImage && !resolvedGame.coverImage) {

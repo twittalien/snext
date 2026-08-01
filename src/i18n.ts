@@ -55,7 +55,7 @@ export const translations = {
     integrations: "Integraciones",
     notConfigured: "Sin configurar",
     demoWarning:
-      "Esta versión utiliza información demostrativa. No introduzcas todavía credenciales reales.",
+      "Las credenciales se guardan sólo en este dispositivo durante las pruebas. No las compartas.",
     imageOnly: "Selecciona un archivo de imagen.",
     imageTooLarge: "La imagen debe pesar menos de 2 MB.",
   },
@@ -114,7 +114,7 @@ export const translations = {
     integrations: "Integrations",
     notConfigured: "Not configured",
     demoWarning:
-      "This version uses demonstration data. Do not enter real credentials yet.",
+      "Credentials are stored only on this device during testing. Do not share them.",
     imageOnly: "Select an image file.",
     imageTooLarge: "The image must be smaller than 2 MB.",
   },
@@ -173,7 +173,7 @@ export const translations = {
     integrations: "Integrações",
     notConfigured: "Não configurado",
     demoWarning:
-      "Esta versão usa dados de demonstração. Ainda não insira credenciais reais.",
+      "As credenciais ficam somente neste dispositivo durante os testes. Não as compartilhe.",
     imageOnly: "Selecione um arquivo de imagem.",
     imageTooLarge: "A imagem deve ter menos de 2 MB.",
   },

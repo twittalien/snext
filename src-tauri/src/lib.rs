@@ -125,6 +125,12 @@ struct PublicGameArtRequest {
     language: String,
 }
 
+#[derive(Deserialize)]
+struct SteamStoreArtRequest {
+    title: String,
+    language: String,
+}
+
 #[derive(Serialize)]
 struct SteamGridArtResponse {
     hero_image: Option<String>,
@@ -1093,6 +1099,9 @@ fn remote_game_art_host_allowed(url: &reqwest::Url) -> bool {
         || (host == "s3.amazonaws.com" && url.path().starts_with("/steamgriddb/"))
         || host == "screenscraper.fr"
         || host.ends_with(".screenscraper.fr")
+        || host == "store.steampowered.com"
+        || host.ends_with(".steamstatic.com")
+        || host.ends_with(".akamaihd.net")
         || host.ends_with(".wikipedia.org")
         || host.ends_with(".wikimedia.org")
 }
@@ -1803,6 +1812,9 @@ async fn remote_image_url_ok(client: &reqwest::Client, url: &str) -> bool {
         || (host == "s3.amazonaws.com" && parsed.path().starts_with("/steamgriddb/"))
         || host == "screenscraper.fr"
         || host.ends_with(".screenscraper.fr")
+        || host == "store.steampowered.com"
+        || host.ends_with(".steamstatic.com")
+        || host.ends_with(".akamaihd.net")
         || host.ends_with(".wikipedia.org")
         || host.ends_with(".wikimedia.org");
     if parsed.scheme() != "https" || !allowed {
@@ -2029,6 +2041,115 @@ fn create_generated_game_art(title: &str, platform: &str) -> Option<String> {
     );
     fs::write(&target, svg).ok()?;
     path_to_file_url(&target)
+}
+
+#[tauri::command]
+async fn fetch_steam_store_art(
+    request: SteamStoreArtRequest,
+) -> Result<SteamGridArtResponse, String> {
+    let title = request.title.trim();
+    if title.is_empty() {
+        return Err("Falta el título para consultar Steam Store".into());
+    }
+    let language = match request.language.as_str() {
+        "en" => "english",
+        "pt" => "portuguese",
+        _ => "spanish",
+    };
+    let client = reqwest::Client::builder()
+        .user_agent("Snext/0.4 Steam Store art")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let search = client
+        .get("https://store.steampowered.com/api/storesearch/")
+        .query(&[("term", title), ("l", language), ("cc", "us")])
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if !search.status().is_success() {
+        return Err(format!("Steam Store respondió {}", search.status()));
+    }
+    let results = search
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| error.to_string())?;
+    let best = results
+        .get("items")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|item| item.get("type").and_then(serde_json::Value::as_str) == Some("app"))
+        .min_by_key(|item| {
+            steam_grid_match_score(
+                title,
+                item.get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default(),
+            )
+        })
+        .ok_or_else(|| format!("Steam Store no encontró {title}"))?;
+    let app_id = json_u64(best.get("id"))
+        .ok_or_else(|| "Steam Store devolvió un juego sin AppID".to_string())?;
+    let matched_title = best
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(title)
+        .to_string();
+    let details = client
+        .get("https://store.steampowered.com/api/appdetails")
+        .query(&[("appids", app_id.to_string()), ("l", language.to_string()), ("cc", "us".to_string())])
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if !details.status().is_success() {
+        return Err(format!("Steam Store respondió {} al consultar el juego", details.status()));
+    }
+    let detail_data = details
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| error.to_string())?;
+    let app_key = app_id.to_string();
+    let data = detail_data
+        .get(&app_key)
+        .and_then(|value| value.get("data"))
+        .ok_or_else(|| "Steam Store no devolvió los detalles del juego".to_string())?;
+    let cover_image = json_string_value(data.get("header_image"))
+        .or_else(|| json_string_value(best.get("tiny_image")));
+    let mut hero_images = Vec::new();
+    for candidate in [
+        json_string_value(data.get("background")),
+        json_string_value(data.get("header_image")),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        push_unique_url(&mut hero_images, candidate);
+    }
+    if let Some(screenshots) = data.get("screenshots").and_then(serde_json::Value::as_array) {
+        for screenshot in screenshots.iter().take(3) {
+            if let Some(url) = json_string_value(screenshot.get("path_full"))
+                .or_else(|| json_string_value(screenshot.get("path_thumbnail")))
+            {
+                push_unique_url(&mut hero_images, url);
+            }
+        }
+    }
+    let hero_image = hero_images.first().cloned();
+    if hero_image.is_none() && cover_image.is_none() {
+        return Err(format!("Steam Store no devolvió arte para {matched_title}"));
+    }
+    let mut response = SteamGridArtResponse {
+        hero_image,
+        hero_images,
+        cover_image,
+        logo: None,
+        description: json_string_value(data.get("short_description"))
+            .or_else(|| json_string_value(data.get("detailed_description"))),
+        matched_title,
+        source: Some("Steam Store".into()),
+    };
+    cache_remote_art_response(&mut response, &client, title).await;
+    Ok(response)
 }
 
 #[tauri::command]
@@ -2439,6 +2560,9 @@ async fn fetch_remote_image(
         || (host == "s3.amazonaws.com" && url.path().starts_with("/steamgriddb/"))
         || host == "screenscraper.fr"
         || host.ends_with(".screenscraper.fr")
+        || host == "store.steampowered.com"
+        || host.ends_with(".steamstatic.com")
+        || host.ends_with(".akamaihd.net")
         || host.ends_with(".wikipedia.org")
         || host.ends_with(".wikimedia.org");
     if url.scheme() != "https" || !allowed {
@@ -2731,6 +2855,7 @@ pub fn run() {
             fetch_discord_presence,
             fetch_retro_achievements,
             fetch_es_de_art,
+            fetch_steam_store_art,
             fetch_public_game_art,
             search_steam_grid_games,
             fetch_steam_grid_art,
