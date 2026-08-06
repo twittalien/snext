@@ -323,7 +323,7 @@ main {
 }
 
 .music-card {
-  grid-column: span 5;
+  grid-column: span 6;
   min-width: 0;
   min-height: 20rem;
   padding: 0;
@@ -362,9 +362,13 @@ main {
   min-height: 15rem;
 }
 
-.system-card,
 .assistant-card {
-  grid-column: 1 / -1;
+  grid-column: span 5;
+  min-height: 20rem;
+}
+
+.system-card {
+  grid-column: span 6;
 }
 
 .card {
@@ -474,8 +478,7 @@ main {
   text-transform: uppercase;
 }
 
-.progress,
-.system-grid i {
+.progress {
   overflow: hidden;
   border-radius: 99px;
   background: rgba(140, 140, 165, 0.18);
@@ -538,42 +541,115 @@ main {
 
 .system-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1.125rem 1.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
 }
 
-.system-grid div {
+.system-metric {
+  --metric-value: 0%;
+  --metric-color: var(--cyan);
+  position: relative;
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.4375rem;
+  min-height: 7.2rem;
   min-width: 0;
-  font-size: 0.78rem;
-}
-
-.system-grid span {
-  color: var(--muted);
-}
-
-.system-grid strong {
+  place-items: center;
+  padding: 0.85rem 0.55rem;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      color-mix(in srgb, var(--metric-color) 12%, transparent),
+      transparent 58%
+    ),
+    rgba(255, 255, 255, 0.035);
+}
+
+.system-metric::before {
+  position: absolute;
+  inset: 0.9rem;
+  border-radius: 50%;
+  background:
+    conic-gradient(
+      var(--metric-color) var(--metric-value),
+      rgba(255, 255, 255, 0.1) 0
+    );
+  mask:
+    radial-gradient(
+      farthest-side,
+      transparent calc(100% - 0.5rem),
+      #000 calc(100% - 0.48rem)
+    );
+  -webkit-mask:
+    radial-gradient(
+      farthest-side,
+      transparent calc(100% - 0.5rem),
+      #000 calc(100% - 0.48rem)
+    );
+  content: "";
+}
+
+.system-metric i {
+  position: absolute;
+  inset: 1.42rem;
+  display: block;
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.08),
+      rgba(255, 255, 255, 0.02)
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 0 1.4rem color-mix(in srgb, var(--metric-color) 18%, transparent);
+}
+
+.system-metric span,
+.system-metric strong {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.system-metric span {
+  align-self: end;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.system-metric strong {
+  align-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: clamp(0.95rem, 1.6vw, 1.35rem);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.system-grid i {
-  grid-column: 1 / -1;
-  height: 0.3125rem;
+.system-metric--cyan {
+  --metric-color: #35dff0;
 }
 
-.system-grid i b {
-  display: block;
-  height: 100%;
-  background:
-    linear-gradient(
-      90deg,
-      var(--purple),
-      var(--cyan)
-    );
+.system-metric--violet {
+  --metric-color: #8c62ff;
+}
+
+.system-metric--green {
+  --metric-color: #4ff0b4;
+}
+
+.system-metric--amber {
+  --metric-color: #ffb000;
+}
+
+.system-metric--rose {
+  --metric-color: #ff4f91;
 }
 
 .assistant-card {
@@ -1410,20 +1486,25 @@ main {
 }
 
 .achievements-card {
-  grid-column: span 6;
+  grid-column: span 7;
   min-height: 14.2rem;
 }
 
 .weather-card {
-  grid-column: 1 / -1;
-  min-height: 7.6rem;
+  grid-column: span 6;
+  min-height: 14.2rem;
 }
 
+.music-card,
 .friends-card,
-.system-card,
-.assistant-card {
-  grid-column: span 4;
+.system-card {
+  grid-column: span 6;
   min-height: 13.5rem;
+}
+
+.assistant-card {
+  grid-column: span 5;
+  min-height: 14.2rem;
 }
 
 .card,
@@ -1561,7 +1642,7 @@ main {
 }
 
 .system-grid {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
 }
 

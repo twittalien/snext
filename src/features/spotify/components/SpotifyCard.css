@@ -247,7 +247,7 @@
 .spotify-v2__track {
   display: grid;
   align-self: stretch;
-  gap: var(--snext-space-5);
+  gap: var(--snext-space-4);
   min-width: 0;
 }
 
@@ -347,6 +347,41 @@
 
 .spotify-v2__footer strong {
   color: rgba(255, 255, 255, 0.82);
+}
+
+.spotify-v2__insight {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.72rem 0.82rem;
+  border: 1px solid rgba(29, 215, 96, 0.22);
+  border-radius: 0.9rem;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(29, 215, 96, 0.13),
+      rgba(53, 223, 240, 0.05)
+    ),
+    rgba(4, 8, 12, 0.3);
+}
+
+.spotify-v2__insight span {
+  color: #1ed760;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.spotify-v2__insight p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .spotify-v2__ambient-bars {

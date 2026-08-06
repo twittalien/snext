@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { Card, ProgressBar } from "../../../components/ui";
 import "./SpotifyCard.css";
 
@@ -17,6 +18,11 @@ type SpotifyCardProps = {
   track?: SpotifyTrack;
   connected?: boolean;
   className?: string;
+  aiOptions?: {
+    ollamaUrl: string;
+    ollamaModel: string;
+    language: "es" | "en" | "pt";
+  };
 };
 
 function formatTime(milliseconds: number) {
@@ -32,10 +38,102 @@ export function SpotifyCard({
   track,
   connected = true,
   className,
+  aiOptions,
 }: SpotifyCardProps) {
   const hasTrack = connected && Boolean(track);
+  const [tick, setTick] = useState(Date.now());
+  const [musicInsight, setMusicInsight] = useState("");
+  const trackKey = hasTrack
+    ? `${track!.title}:${track!.artist}:${track!.album ?? ""}`
+    : "";
+  const receivedAt = useMemo(() => Date.now(), [trackKey, track?.progressMs]);
+
+  useEffect(() => {
+    if (!hasTrack || !track!.isPlaying) {
+      return;
+    }
+
+    const timer = window.setInterval(() => setTick(Date.now()), 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [hasTrack, track?.isPlaying, trackKey]);
+
+  useEffect(() => {
+    setTick(Date.now());
+  }, [trackKey, track?.progressMs]);
+
+  useEffect(() => {
+    if (!hasTrack || !aiOptions?.ollamaUrl.trim() || !aiOptions.ollamaModel.trim()) {
+      setMusicInsight("");
+      return;
+    }
+
+    const cacheKey = `snext-song-insight:${aiOptions.language}:${trackKey}`;
+    const cached = localStorage.getItem(cacheKey);
+
+    if (cached) {
+      setMusicInsight(cached);
+      return;
+    }
+
+    let active = true;
+    const languageName =
+      aiOptions.language === "en"
+        ? "English"
+        : aiOptions.language === "pt"
+          ? "Portuguese"
+          : "Spanish";
+    const prompt = [
+      `Answer in ${languageName}.`,
+      "You are Snext, a concise gaming companion on a secondary monitor.",
+      "Give one interesting, factual-sounding music note about the current song, artist, album, genre or listening context.",
+      "If you are not certain, phrase it as a listening suggestion instead of inventing facts.",
+      "Keep it under 32 words.",
+      `Song: ${track!.title}`,
+      `Artist: ${track!.artist}`,
+      `Album: ${track!.album ?? "Unknown"}`,
+    ].join("\n");
+
+    fetch(`${aiOptions.ollamaUrl.replace(/\/$/, "")}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: aiOptions.ollamaModel,
+        prompt,
+        stream: false,
+      }),
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { response?: string } | null) => {
+        const body = data?.response?.trim();
+
+        if (active && body) {
+          localStorage.setItem(cacheKey, body);
+          setMusicInsight(body);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setMusicInsight("");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [aiOptions?.language, aiOptions?.ollamaModel, aiOptions?.ollamaUrl, hasTrack, trackKey]);
+
   const progress = hasTrack
-    ? Math.min(track!.durationMs, Math.max(0, track!.progressMs))
+    ? Math.min(
+        track!.durationMs,
+        Math.max(
+          0,
+          track!.progressMs +
+            (track!.isPlaying ? Math.max(0, tick - receivedAt) : 0),
+        ),
+      )
     : 0;
 
   const percentage =
@@ -68,11 +166,11 @@ export function SpotifyCard({
         <div className="spotify-v2__brand">
           <span className="spotify-v2__brand-icon">
             <img
-            src="/brands/spotify/icon.png"
-            alt="Spotify"
-    aria-hidden="true"
-  />
-</span>
+              src="/brands/spotify/icon.png"
+              alt="Spotify"
+              aria-hidden="true"
+            />
+          </span>
 
           <div>
             <span>Spotify</span>
@@ -177,6 +275,14 @@ export function SpotifyCard({
 
               <strong>{track!.device ?? "Spotify"}</strong>
             </footer>
+
+            <aside className="spotify-v2__insight">
+              <span>Ollama</span>
+              <p>
+                {musicInsight ||
+                  `Escucha los cambios de ritmo y mezcla de ${track!.artist}; Snext añadirá contexto musical cuando Ollama responda.`}
+              </p>
+            </aside>
           </div>
         </div>
       ) : (

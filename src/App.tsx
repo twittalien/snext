@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   type ChangeEvent,
   useCallback,
   useEffect,
@@ -85,7 +86,7 @@ type PendingGameMatch = {
   candidates: SteamGridSearchResult[];
 };
 
-const SNEXT_VERSION = "2.0.0";
+const SNEXT_VERSION = "2.0.1";
 const SNEXT_BUILD = "AppImage portable con acceso KDE autocreado";
 const SPOTIFY_REDIRECT_URI = "http://127.0.0.1:53127/callback";
 const SPOTIFY_SCOPES = [
@@ -388,6 +389,31 @@ function Icon({ children }: { children: string }) {
     <span className="icon" aria-hidden="true">
       {children}
     </span>
+  );
+}
+
+function MetricGauge({
+  label,
+  value,
+  display,
+  tone = "cyan",
+}: {
+  label: string;
+  value: number;
+  display: string;
+  tone?: "cyan" | "violet" | "green" | "amber" | "rose";
+}) {
+  const safeValue = Math.min(100, Math.max(0, value));
+
+  return (
+    <div
+      className={`system-metric system-metric--${tone}`}
+      style={{ "--metric-value": `${safeValue}%` } as CSSProperties}
+    >
+      <i aria-hidden="true" />
+      <span>{label}</span>
+      <strong>{display}</strong>
+    </div>
   );
 }
 
@@ -940,18 +966,35 @@ function App() {
             {dashboardData && <GameHero game={dashboardData.game} />}
           </div>
 
-          <div className="music-card">
-            <SpotifyCard
-              track={dashboardData?.track}
-              connected={Boolean(dashboardData?.track)}
-            />
-          </div>
+          <article className="card assistant-card">
+            <div className="assistant-icon">✦</div>
+
+            <div>
+              <p className="eyebrow">
+                {assistantSourceLabel.toUpperCase()}
+              </p>
+              <h2>{assistantInsight?.title ?? t.aiTipTitle}</h2>
+              <p>{assistantInsight?.body ?? t.aiTip}</p>
+            </div>
+          </article>
 
           <div className="achievements-card">
             <AchievementsCarousel
               games={dashboardData?.achievementGames ?? []}
               rotationSeconds={settings.achievementRotationSeconds}
               title={t.achievements}
+            />
+          </div>
+
+          <div className="music-card">
+            <SpotifyCard
+              track={dashboardData?.track}
+              connected={Boolean(dashboardData?.track)}
+              aiOptions={{
+                ollamaUrl: settings.ollamaUrl,
+                ollamaModel: settings.ollamaModel,
+                language: settings.language,
+              }}
             />
           </div>
 
@@ -1009,125 +1052,60 @@ function App() {
             </div>
 
             <div className="system-grid">
-              <div>
-                <span>CPU</span>
-                <strong>
-                  {dashboardData?.system.cpuLoad ?? 0}%
-                </strong>
+              <MetricGauge
+                label="CPU"
+                value={dashboardData?.system.cpuLoad ?? 0}
+                display={`${dashboardData?.system.cpuLoad ?? 0}%`}
+                tone="cyan"
+              />
 
-                <i>
-                  <b
-                    style={{
-                      width: `${dashboardData?.system.cpuLoad ?? 0}%`,
-                    }}
-                  />
-                </i>
-              </div>
-
-              <div>
-                <span>GPU</span>
-                <strong>
-                  {dashboardData?.system.gpuLoad ?? 0}%
-                </strong>
-
-                <i>
-                  <b
-                    style={{
-                      width: `${dashboardData?.system.gpuLoad ?? 0}%`,
-                    }}
-                  />
-                </i>
-              </div>
+              <MetricGauge
+                label="GPU"
+                value={dashboardData?.system.gpuLoad ?? 0}
+                display={`${dashboardData?.system.gpuLoad ?? 0}%`}
+                tone="violet"
+              />
 
               {dashboardData?.system.vramLabel ? (
-                <div>
-                  <span>VRAM</span>
-                  <strong>{dashboardData.system.vramLabel}</strong>
-
-                  <i>
-                    <b
-                      style={{
-                        width: `${dashboardData.system.vramLoad ?? 0}%`,
-                      }}
-                    />
-                  </i>
-                </div>
+                <MetricGauge
+                  label="VRAM"
+                  value={dashboardData.system.vramLoad ?? 0}
+                  display={dashboardData.system.vramLabel}
+                  tone="rose"
+                />
               ) : null}
 
-              <div>
-                <span>RAM</span>
-                <strong>
-                  {dashboardData?.system.memoryLabel ?? "N/D"}
-                </strong>
-
-                <i>
-                  <b
-                    style={{
-                      width: `${dashboardData?.system.memoryLoad ?? 0}%`,
-                    }}
-                  />
-                </i>
-              </div>
+              <MetricGauge
+                label="RAM"
+                value={dashboardData?.system.memoryLoad ?? 0}
+                display={dashboardData?.system.memoryLabel ?? "N/D"}
+                tone="green"
+              />
 
               {dashboardData?.system.cpuTemperatureLabel ? (
-                <div>
-                  <span>CPU temp</span>
-                  <strong>{dashboardData.system.cpuTemperatureLabel}</strong>
-
-                  <i>
-                    <b
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Number.parseInt(dashboardData.system.cpuTemperatureLabel, 10) || 0,
-                        )}%`,
-                      }}
-                    />
-                  </i>
-                </div>
+                <MetricGauge
+                  label="CPU temp"
+                  value={Number.parseInt(dashboardData.system.cpuTemperatureLabel, 10) || 0}
+                  display={dashboardData.system.cpuTemperatureLabel}
+                  tone="amber"
+                />
               ) : null}
 
-              <div>
-                <span>{t.network}</span>
-                <strong>
-                  {dashboardData?.system.networkLabel ?? "N/D"}
-                </strong>
-
-                <i>
-                  <b
-                    style={{
-                      width: `${dashboardData?.system.networkLoad ?? 0}%`,
-                    }}
-                  />
-                </i>
-              </div>
+              <MetricGauge
+                label={t.network}
+                value={dashboardData?.system.networkLoad ?? 0}
+                display={dashboardData?.system.networkLabel ?? "N/D"}
+                tone="cyan"
+              />
 
               {dashboardData?.system.batteryLabel ? (
-                <div>
-                  <span>Batería</span>
-                  <strong>{dashboardData.system.batteryLabel}</strong>
-
-                  <i>
-                    <b
-                      style={{
-                        width: `${dashboardData.system.batteryLoad ?? 0}%`,
-                      }}
-                    />
-                  </i>
-                </div>
+                <MetricGauge
+                  label="Batería"
+                  value={dashboardData.system.batteryLoad ?? 0}
+                  display={dashboardData.system.batteryLabel}
+                  tone="green"
+                />
               ) : null}
-            </div>
-          </article>
-
-          <article className="card assistant-card">
-            <div className="assistant-icon">✦</div>
-
-            <div>
-              <p className="eyebrow">
-                {assistantSourceLabel.toUpperCase()}
-              </p>
-              <h2>{assistantInsight?.title ?? t.aiTipTitle}</h2>
-              <p>{assistantInsight?.body ?? t.aiTip}</p>
             </div>
           </article>
         </section>
