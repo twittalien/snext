@@ -1,0 +1,11 @@
+Snext v2.0.1
+
+Build: dashboard visual refresh
+Fecha: 2026-08-06
+
+Incluye:
+- Marco dinamico de portada por plataforma.
+- Tarjeta de IA agrupada con Juego y Logros.
+- Spotify con progreso local por segundo e insight musical con Ollama.
+- Clima redisenado visualmente.
+- Tu equipo con medidores circulares.
