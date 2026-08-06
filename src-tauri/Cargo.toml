@@ -1,6 +1,6 @@
 [package]
 name = "snext"
-version = "0.4.2"
+version = "2.0.0"
 description = "Dashboard informativo de gaming"
 authors = ["you"]
 edition = "2021"

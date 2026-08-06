@@ -72,6 +72,10 @@ export function GameHero({
   const platformInfo = getPlatformInfo(
     `${game.platform} ${game.source} ${game.platformHint ?? ""}`,
   );
+  const platformStyle = {
+    "--game-platform-color": platformInfo.color,
+    "--game-platform-bg": platformInfo.background,
+  } as CSSProperties;
 
   return (
     <Card
@@ -135,12 +139,28 @@ export function GameHero({
 
           <div className="game-hero__game-row">
             {hasCoverImage && (
-              <div className="game-hero__cover game-hero__cover--image">
+              <div
+                className={[
+                  "game-hero__cover",
+                  "game-hero__cover--image",
+                  platformInfo.assetUrl ? "game-hero__cover--platform-asset" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                style={platformStyle}
+              >
                 <RemoteImage
                   src={game.coverImage}
                   fallbackSrc="/demo/game/cover.svg"
                   alt={`${game.title} portada`}
                 />
+                <span className="game-hero__cover-platform" aria-hidden="true">
+                  {platformInfo.assetUrl ? (
+                    <img src={platformInfo.assetUrl} alt="" loading="lazy" />
+                  ) : (
+                    <b>{platformInfo.shortName}</b>
+                  )}
+                </span>
               </div>
             )}
 

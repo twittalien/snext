@@ -17,3 +17,12 @@ build-appimage.yml de este directorio, copia todo su contenido, y en GitHub:
 
 Luego ve a Actions > Crear AppImage de Snext > Run workflow. Al terminar,
 aparecera el AppImage descargable en Releases.
+
+Si el job falla, abre el recuadro rojo "AppImage para Bazzite" y luego el
+paso rojo exacto. La pantalla Summary solo muestra "exit code", pero no la
+causa real.
+
+Si el build termina pero falla al publicar el Release por permisos:
+1. Ve a Settings > Actions > General.
+2. En Workflow permissions selecciona Read and write permissions.
+3. Guarda y ejecuta nuevamente el workflow.
