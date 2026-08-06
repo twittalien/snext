@@ -19,6 +19,7 @@ export function PlatformBadge({
     <span
       className={[
         "snext-platform-badge",
+        info.assetUrl ? "snext-platform-badge--asset" : "",
         compact ? "snext-platform-badge--compact" : "",
       ]
         .filter(Boolean)
@@ -30,7 +31,11 @@ export function PlatformBadge({
       title={info.name}
     >
       <span className="snext-platform-badge__icon" aria-hidden="true">
-        {info.glyph}
+        {info.assetUrl ? (
+          <img src={info.assetUrl} alt="" loading="lazy" />
+        ) : (
+          info.glyph
+        )}
       </span>
 
       {!compact && (
